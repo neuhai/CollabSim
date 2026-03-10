@@ -1,0 +1,18 @@
+{
+  "per_agent": {},
+  "per_run": {
+    "steps_taken": 3.0,
+    "target_steps": 3.0,
+    "efficiency": 1.0,
+    "completed": 1.0,
+    "event_count_probe_asked": 5.0,
+    "event_count_state_updated": 5.0,
+    "messages_sent": 0.0,
+    "messages_received": 0.0,
+    "probe_records": 5.0,
+    "probe_answered": 0.0,
+    "probe_unanswered": 5.0,
+    "probe_response_rate": 0.0,
+    "probe_construct_grounding": 5.0
+  }
+}

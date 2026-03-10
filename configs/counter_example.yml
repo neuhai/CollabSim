@@ -1,0 +1,32 @@
+experiment:
+  id: "counter_example_v1"
+  seed: 123
+  max_steps: 5
+agents:
+  - id: "A"
+    role: "observer"
+    model:
+      provider: "mock"
+      name: "mock-model"
+action_space:
+  enabled: ["communicate", "decide", "propose", "respond", "transfer"]
+controls:
+  communication:
+    mode: "broadcast"
+  information_distribution:
+    visibility: "symmetric"
+  interdependence:
+    structure: "team"
+task:
+  type: "counter"
+  target_steps: 3
+protocol:
+  turn_taking: "sequential"
+  termination:
+    condition: "max_steps"
+probe:
+  cadence: "per_turn"
+  templates: ["grounding_v1"]
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/counter_example_v1"

@@ -1,0 +1,41 @@
+version: "v1"
+templates:
+  - template_id: "grounding_v1"
+    construct: "grounding"
+    version: "v1"
+    prompt: "State your partner's current intent in one sentence."
+    response_schema:
+      required:
+        - "answer"
+      optional:
+        - "confidence"
+        - "structured_fields"
+      structured_fields:
+        - "partner_intent"
+        - "beliefs"
+  - template_id: "situation_awareness_v1"
+    construct: "situation_awareness"
+    version: "v1"
+    prompt: "Predict your partner's next action and rationale."
+    response_schema:
+      required:
+        - "answer"
+      optional:
+        - "confidence"
+        - "structured_fields"
+      structured_fields:
+        - "predicted_action"
+        - "rationale"
+  - template_id: "coordination_v1"
+    construct: "coordination"
+    version: "v1"
+    prompt: "Name the main coordination obstacle right now."
+    response_schema:
+      required:
+        - "answer"
+      optional:
+        - "confidence"
+        - "structured_fields"
+      structured_fields:
+        - "obstacle"
+        - "next_step"

@@ -1,0 +1,32 @@
+experiment:
+  id: "hidden_profile_v1"
+  seed: 7
+  max_steps: 6
+agents:
+  - id: "A"
+    role: "planner"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+  - id: "B"
+    role: "planner"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+action_space:
+  enabled: ["communicate", "decide"]
+controls: {}
+task:
+  type: "hidden_profile"
+  target_steps: 3
+  shared_facts:
+    - "Objective is to pick the optimal plan."
+  private_facts:
+    A:
+      - "Plan X is low risk."
+    B:
+      - "Plan Y yields higher reward."
+protocol:
+  turn_taking: "sequential"
+  termination: { condition: "max_steps" }
+probe:
+  cadence: "per_action"
+  templates: ["grounding_v1", "coordination_v1"]
+logging:
+  trace_schema_version: "v0"

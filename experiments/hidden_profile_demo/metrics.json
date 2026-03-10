@@ -1,0 +1,50 @@
+{
+  "per_agent": {
+    "B": {
+      "probe_records": 6.0,
+      "probe_answered": 6.0,
+      "probe_unanswered": 0.0,
+      "probe_response_rate": 1.0,
+      "probe_confidence_mean": 0.9250000000000002,
+      "probe_construct_coordination": 3.0,
+      "probe_construct_grounding": 3.0,
+      "messages_received": 4.0,
+      "messages_sent": 2.0
+    },
+    "A": {
+      "probe_records": 6.0,
+      "probe_answered": 6.0,
+      "probe_unanswered": 0.0,
+      "probe_response_rate": 1.0,
+      "probe_confidence_mean": 0.9583333333333334,
+      "probe_construct_coordination": 3.0,
+      "probe_construct_grounding": 3.0,
+      "messages_sent": 2.0,
+      "messages_received": 4.0
+    }
+  },
+  "per_run": {
+    "steps_taken": 3.0,
+    "target_steps": 3.0,
+    "efficiency": 1.0,
+    "completed": 1.0,
+    "event_count_action_proposed": 6.0,
+    "event_count_action_submitted": 4.0,
+    "event_count_action_validated": 4.0,
+    "event_count_message_delivered": 4.0,
+    "event_count_observation_built": 6.0,
+    "event_count_probe_answered": 12.0,
+    "event_count_probe_asked": 12.0,
+    "event_count_state_updated": 3.0,
+    "action_submitted_communicate_count": 4.0,
+    "messages_sent": 4.0,
+    "messages_received": 8.0,
+    "probe_records": 24.0,
+    "probe_answered": 12.0,
+    "probe_unanswered": 12.0,
+    "probe_response_rate": 0.5,
+    "probe_confidence_mean": 0.9416666666666668,
+    "probe_construct_coordination": 12.0,
+    "probe_construct_grounding": 12.0
+  }
+}

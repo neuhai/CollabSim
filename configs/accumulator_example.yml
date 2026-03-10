@@ -1,0 +1,33 @@
+experiment:
+  id: "accumulator_example_v1"
+  seed: 321
+  max_steps: 6
+agents:
+  - id: "A"
+    role: "observer"
+    model:
+      provider: "mock"
+      name: "mock-model"
+action_space:
+  enabled: ["communicate", "decide", "propose", "respond", "transfer"]
+controls:
+  communication:
+    mode: "broadcast"
+  information_distribution:
+    visibility: "symmetric"
+  interdependence:
+    structure: "team"
+task:
+  type: "accumulator"
+  target_value: 10
+  increment: 2
+protocol:
+  turn_taking: "sequential"
+  termination:
+    condition: "max_steps"
+probe:
+  cadence: "per_turn"
+  templates: ["grounding_v1"]
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/accumulator_example_v1"

@@ -1,0 +1,28 @@
+{
+  "run_id": "counter_v1",
+  "config_hash": "60a347c7adc2b89a8f3ff5695f5bfc79903641b071af34a26f4f323cea92cebe",
+  "model_metadata": [
+    {
+      "agent_id": "A",
+      "provider": "mock",
+      "name": "mock-model",
+      "version": null,
+      "temperature": null,
+      "top_p": null,
+      "max_tokens": null
+    }
+  ],
+  "prompt_versions": [
+    {
+      "template_id": "grounding_v1",
+      "version": "v1",
+      "prompt_hash": "b29d8789b36f72f174b42dccaf9e1b3e09532ca1522b6bd3e5337e0a65084264"
+    }
+  ],
+  "timestamp": "2026-03-09T20:53:40.477613+00:00",
+  "seeds": {
+    "random": 123
+  },
+  "trace_schema_version": "v0",
+  "code_version": "c3ef14de9e7d87358cb60ea3ce748ac131f5f09f"
+}
