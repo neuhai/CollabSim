@@ -42,6 +42,7 @@ Field-level guidance for experiment configuration.
 ### protocol
 - `turn_taking`: turn-taking strategy (`sequential` or `simultaneous`)
 - `termination`: termination settings (`condition`: `max_steps` or `task_complete`)
+- `step_mode`: controller stepping (`event` or `tick`)
 - `proposal_expiry_steps`: integer step threshold for proposal expiry (relative to creation)
 - `decision_timeout_steps`: integer step threshold before decision reveal
 - `decision_quorum`: integer number of decisions required for aggregated reveal

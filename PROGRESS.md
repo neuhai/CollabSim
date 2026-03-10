@@ -2,12 +2,21 @@
 
 ## Current Focus
 <!-- Active task being worked on -->
-- Task: Review context-update demo outputs
+- Task: Await GUI feedback
 - Status: awaiting_approval
 - Blocker: none
 
 ## Completed Items
 <!-- Reverse chronological - newest first -->
+- [x] 2026-03-10 Add GUI YAML editor with validation
+- [x] 2026-03-09 Add event-driven stepping mode
+- [x] 2026-03-09 Add GUI port override via PORT env
+- [x] 2026-03-09 Improve GUI layout and hints
+- [x] 2026-03-09 Add GUI preset configs and CLI parameter parity
+- [x] 2026-03-09 Add minimal Flask GUI for experiments
+- [x] 2026-03-09 Add GUI export/download for run artifacts
+- [x] 2026-03-09 Document GUI usage in README
+- [x] 2026-03-09 Summarize system functionality for user
 - [x] 2026-03-09 Create GitHub repo and push project snapshot
 - [x] 2026-03-09 Add persona profiles and memory fading
 - [x] 2026-03-09 Add multi-question workspace probes per collaborator
@@ -728,5 +737,5 @@ logging:
 
 ## Next Steps
 <!-- Clear actionable items for resumption -->
-1. Confirm context-update behavior meets expectations
-2. Optional: adjust prompt/question files
+1. Confirm GUI workflow meets expectations
+2. Optional: add filters/search or theming in GUI

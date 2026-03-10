@@ -159,10 +159,19 @@ class ExperimentController:
         resolved_max_steps = self._resolve_max_steps(max_steps)
         self._reset_agents()
         termination_condition = self._termination_condition()
-        while self.state.step_index < resolved_max_steps:
-            if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
-                break
-            self.step()
+        if self._step_mode() == "event":
+            self._schedule_context_updates()
+            while self.state.step_index < resolved_max_steps:
+                if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
+                    break
+                if not self.state.pending_actions and not self.state.pending_context_updates:
+                    break
+                self.step()
+        else:
+            while self.state.step_index < resolved_max_steps:
+                if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
+                    break
+                self.step()
         self._export_metrics()
         self._flush_logs()
         self._write_manifest()
@@ -181,6 +190,17 @@ class ExperimentController:
         if isinstance(condition, str) and condition:
             return condition
         return "task_complete"
+
+    def _step_mode(self) -> str:
+        if not isinstance(self.config, dict):
+            return "event"
+        protocol = self.config.get("protocol", {})
+        if not isinstance(protocol, dict):
+            return "event"
+        mode = protocol.get("step_mode")
+        if isinstance(mode, str) and mode:
+            return mode
+        return "event"
 
     def _resolve_max_steps(self, max_steps: int | None) -> int:
         if max_steps is not None:
@@ -552,7 +572,7 @@ class ExperimentController:
             action = proposal.action
             if self._log_observation_events():
                 self._emit_event(
-                    event_type="action_proposed",
+                    event_type="context_update",
                     actor_id=agent_id,
                     visibility="system",
                     payload={

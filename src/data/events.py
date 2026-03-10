@@ -20,7 +20,7 @@ EVENT_TYPES: tuple[str, ...] = (
     "action_submitted",
     "action_validated",
     "action_rejected",
-    "action_proposed",
+    "context_update",
     "observation_built",
     "state_updated",
     "message_delivered",

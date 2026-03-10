@@ -22,6 +22,7 @@ task:
   target_steps: 3
 protocol:
   turn_taking: "sequential"
+  step_mode: "event"
   termination:
     condition: "max_steps"
 probe:

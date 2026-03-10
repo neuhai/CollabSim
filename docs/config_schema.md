@@ -10,7 +10,7 @@ Top-level keys:
 - `action_space`: enabled action primitives and constraints
 - `controls`: communication and information constraints
 - `task`: task type and task-specific parameters
-- `protocol`: turn-taking and termination settings
+- `protocol`: turn-taking, termination, and step-mode settings
 - `probe`: probe cadence and template ids
 - `logging`: trace schema version and output settings
 

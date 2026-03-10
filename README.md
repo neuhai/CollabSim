@@ -35,3 +35,13 @@
 - Run id validation: `--run-id` must be a non-empty string
 - Run id usage: `--run-id` is recorded in the run manifest for traceability
 - Max steps: `--max-steps` controls the number of controller steps to execute
+
+## GUI (Optional)
+- Install deps: `pip install -r requirements.txt`
+- Start server: `python -m src.gui.app`
+- Custom port: `PORT=5050 python -m src.gui.app`
+- Open: `http://127.0.0.1:5000`
+- Upload a config YAML or select a preset under `configs/`.
+- Or paste YAML into the built-in editor (takes priority).
+- Configure run id/output dir/max steps/probe templates/manifest path.
+- View agent inputs/outputs, interviews, metrics, and export artifacts as zip.

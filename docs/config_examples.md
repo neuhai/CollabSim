@@ -19,6 +19,7 @@ task:
   target_steps: 3
 protocol:
   turn_taking: "sequential"
+  step_mode: "event"
   termination: { condition: "max_steps" }
 probe:
   cadence: "per_action"
@@ -47,6 +48,7 @@ task:
   increment: 2
 protocol:
   turn_taking: "sequential"
+  step_mode: "event"
   termination: { condition: "max_steps" }
 probe:
   cadence: "per_action"
@@ -84,6 +86,7 @@ task:
       - "Plan Y yields higher reward."
 protocol:
   turn_taking: "sequential"
+  step_mode: "event"
   termination: { condition: "max_steps" }
 probe:
   cadence: "per_action"

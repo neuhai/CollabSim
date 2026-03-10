@@ -1,0 +1,172 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>CollabSim GUI</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fb;
+        --card: #ffffff;
+        --border: #e0e4ef;
+        --text: #1b1f2a;
+        --muted: #616b7a;
+        --accent: #1e5eff;
+      }
+      body { font-family: "Helvetica Neue", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+      header { background: var(--card); border-bottom: 1px solid var(--border); padding: 20px 32px; }
+      header h1 { margin: 0 0 6px 0; font-size: 22px; }
+      header p { margin: 0; color: var(--muted); }
+      main { padding: 24px 32px 48px 32px; }
+      .grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 20px; align-items: start; }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+      fieldset { border: none; padding: 0; margin: 0 0 14px 0; }
+      legend { font-weight: 600; margin-bottom: 8px; }
+      label { display: block; margin: 10px 0; font-weight: 600; }
+      input[type="text"], input[type="number"], select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      input[type="file"] { width: 100%; }
+      .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+      textarea { resize: vertical; }
+      .actions { display: flex; gap: 12px; align-items: center; }
+      .btn { background: var(--accent); color: #fff; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; }
+      .btn-secondary { background: #eef2ff; color: var(--accent); border: 1px solid #d6ddff; }
+      .section-title { margin-top: 0; }
+      ul { padding-left: 20px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>CollabSim GUI</h1>
+      <p>Run experiments, inspect agent I/O + interviews, and export artifacts. CLI remains available.</p>
+    </header>
+
+    <main>
+      <div class="grid">
+        <div class="card">
+          <form action="{{ url_for('run_experiment') }}" method="post" enctype="multipart/form-data">
+            <fieldset>
+              <legend>Experiment Config</legend>
+              <label>
+                YAML Editor
+                <textarea id="yaml_editor" name="yaml_text" rows="10" style="width: 100%; font-family: monospace; padding: 8px; border: 1px solid var(--border); border-radius: 6px;"></textarea>
+                <div class="hint">Paste YAML here. Takes priority over upload/preset.</div>
+              </label>
+              <label>
+                Upload YAML
+                <input type="file" name="config" />
+                <div class="hint">Upload your own config. If blank, choose a preset below.</div>
+              </label>
+
+              <label>
+                Preset YAML
+                <select id="preset_select" name="preset">
+                  <option value="">-- Select preset --</option>
+                  {% for preset in presets %}
+                    <option value="{{ preset }}">{{ preset }}</option>
+                  {% endfor %}
+                </select>
+                <div class="hint">Configs pulled from `configs/`. Upload overrides preset.</div>
+              </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Run Settings (CLI parity)</legend>
+              <label>
+                Run ID
+                <input type="text" name="run_id" placeholder="gui_run_001" />
+                <div class="hint">Defaults to timestamp if empty.</div>
+              </label>
+              <label>
+                Output Dir
+                <input type="text" name="output_dir" value="{{ default_output_dir }}" />
+                <div class="hint">Where events/probes/metrics are written.</div>
+              </label>
+              <label>
+                Max Steps
+                <input type="number" name="max_steps" min="1" />
+                <div class="hint">Controller iterations. In event mode, only advances on activity.</div>
+              </label>
+              <label>
+                Probe Templates Path
+                <input type="text" name="probe_templates" value="configs/probe_templates.yml" />
+                <div class="hint">Same as CLI `--probe-templates`.</div>
+              </label>
+              <label>
+                Manifest Path
+                <input type="text" name="manifest_path" placeholder="experiments/gui_runs/custom_manifest.json" />
+                <div class="hint">Optional: write run manifest to a custom path.</div>
+              </label>
+              <label>
+                <input type="checkbox" name="validate_only" />
+                Validate only
+                <div class="hint">Only validate config; no run executed.</div>
+              </label>
+              <label>
+                <input type="checkbox" name="dry_run" />
+                Dry run
+                <div class="hint">Run without writing logs or manifest.</div>
+              </label>
+            </fieldset>
+
+            <div class="actions">
+              <button class="btn" type="submit">Run Experiment</button>
+              <button class="btn btn-secondary" type="reset">Reset</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2 class="section-title">Existing Runs</h2>
+          {% if runs %}
+            <ul>
+              {% for run in runs %}
+                <li><a href="{{ url_for('run_view', run_id=run) }}">{{ run }}</a></li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p>No GUI runs yet.</p>
+          {% endif %}
+
+          <h2>Preset Demos</h2>
+          {% if presets %}
+            <ul>
+              {% for preset in presets %}
+                <li>{{ preset }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p>No presets found under `configs/`.</p>
+          {% endif %}
+        </div>
+      </div>
+    </main>
+    <script>
+      const presetSelect = document.getElementById("preset_select");
+      const yamlEditor = document.getElementById("yaml_editor");
+      if (presetSelect && yamlEditor) {
+        presetSelect.addEventListener("change", async (event) => {
+          const name = event.target.value;
+          if (!name) {
+            return;
+          }
+          try {
+            const response = await fetch(`/presets/${encodeURIComponent(name)}`);
+            if (!response.ok) {
+              return;
+            }
+            const text = await response.text();
+            yamlEditor.value = text;
+          } catch (error) {
+            // Ignore fetch errors in UI.
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

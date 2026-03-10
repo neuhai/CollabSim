@@ -96,6 +96,10 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
         quorum = protocol.get("decision_quorum")
         if not isinstance(quorum, int) or quorum <= 0:
             raise ConfigSchemaError("protocol.decision_quorum must be a positive integer.")
+    if "step_mode" in protocol:
+        step_mode = protocol.get("step_mode")
+        if step_mode not in ("tick", "event"):
+            raise ConfigSchemaError("protocol.step_mode must be 'tick' or 'event'.")
     if "memory_turn_limit" in protocol:
         limit = protocol.get("memory_turn_limit")
         if not isinstance(limit, int) or limit <= 0:

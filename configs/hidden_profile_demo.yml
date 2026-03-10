@@ -46,6 +46,7 @@ task:
       - "Plan Y yields higher reward."
 protocol:
   turn_taking: "simultaneous"
+  step_mode: "event"
   termination: { condition: "max_steps" }
   memory_turn_limit: 7
 probe:

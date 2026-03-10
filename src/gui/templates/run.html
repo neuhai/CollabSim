@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Run {{ run_id }}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fb;
+        --card: #ffffff;
+        --border: #e0e4ef;
+        --text: #1b1f2a;
+        --muted: #616b7a;
+        --accent: #1e5eff;
+      }
+      body { font-family: "Helvetica Neue", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+      header { background: var(--card); border-bottom: 1px solid var(--border); padding: 20px 32px; }
+      header h1 { margin: 0 0 6px 0; font-size: 22px; }
+      header p { margin: 0; color: var(--muted); }
+      main { padding: 24px 32px 48px 32px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+      .metric { font-size: 20px; font-weight: 700; }
+      pre { background: #f5f5f5; padding: 12px; overflow-x: auto; border-radius: 8px; }
+      section { margin-bottom: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+      summary { cursor: pointer; font-weight: 600; }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .meta { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Run {{ run_id }}</h1>
+      <div class="meta">
+        <span>Output dir: {{ output_dir }}</span>
+        {% if config_path %}
+          <span>Config: {{ config_path }}</span>
+        {% endif %}
+        <span><a href="{{ url_for('index') }}">Back to home</a></span>
+        <span><a href="{{ url_for('export_run', run_id=run_id, output_dir=output_dir) }}">Export artifacts</a></span>
+      </div>
+    </header>
+
+    <main>
+      <div class="grid">
+        <div class="card">
+          <div class="metric">{{ summaries.inputs | length }}</div>
+          <div>Agent Inputs</div>
+        </div>
+        <div class="card">
+          <div class="metric">{{ summaries.outputs | length }}</div>
+          <div>Agent Outputs</div>
+        </div>
+        <div class="card">
+          <div class="metric">{{ interviews | length }}</div>
+          <div>Interview Questions</div>
+        </div>
+      </div>
+
+      <section>
+        <h2>Agent Inputs (Observation Built)</h2>
+        {% for event in summaries.inputs %}
+          <details>
+            <summary>{{ event.get('payload', {}).get('agent_id') }} - step {{ event.get('payload', {}).get('step_index') }}</summary>
+            <pre>{{ event | tojson(indent=2) }}</pre>
+          </details>
+        {% else %}
+          <p>No observation events found.</p>
+        {% endfor %}
+      </section>
+
+      <section>
+        <h2>Agent Outputs (Context Update)</h2>
+        {% for event in summaries.outputs %}
+          <details>
+          <summary>{{ event.get('payload', {}).get('agent_id') }} - step {{ event.get('payload', {}).get('step_index') }}</summary>
+            <pre>{{ event | tojson(indent=2) }}</pre>
+          </details>
+        {% else %}
+          <p>No action proposals found.</p>
+        {% endfor %}
+      </section>
+
+      <section>
+        <h2>Responses (Messages Delivered)</h2>
+        {% for event in summaries.responses %}
+          <details>
+            <summary>{{ event.get('payload', {}).get('message_id') }}</summary>
+            <pre>{{ event | tojson(indent=2) }}</pre>
+          </details>
+        {% else %}
+          <p>No message responses found.</p>
+        {% endfor %}
+      </section>
+
+      <section>
+        <h2>Interviews (Probes)</h2>
+        {% for interview in interviews %}
+          <details>
+            <summary>{{ interview.probe_id }} - {{ interview.prompt }}</summary>
+            <pre>{{ interview | tojson(indent=2) }}</pre>
+          </details>
+        {% else %}
+          <p>No probe records found.</p>
+        {% endfor %}
+      </section>
+
+      <section>
+        <h2>Metrics</h2>
+        <pre>{{ metrics | tojson(indent=2) }}</pre>
+      </section>
+
+      <section>
+        <h2>Run Manifest</h2>
+        <pre>{{ manifest | tojson(indent=2) }}</pre>
+      </section>
+    </main>
+  </body>
+</html>
