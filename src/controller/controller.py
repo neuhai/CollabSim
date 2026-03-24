@@ -1519,7 +1519,12 @@ class ExperimentController:
             return
         new_events = self.state.event_log[self._last_flushed_index :]
         if new_events:
-            append_jsonl(self.run_paths.events_path, new_events)
+            # For runs that have already produced some events, reload the full
+            # in-memory log and write it as a single pretty-printed JSON array.
+            # This keeps the on-disk format as JSON (not JSONL) with indentation.
+            from src.data.logging import write_events_json
+
+            write_events_json(self.run_paths.events_path, self.state.event_log)
             self._last_flushed_index = len(self.state.event_log)
 
     def _export_metrics(self) -> None:

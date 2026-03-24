@@ -48,6 +48,16 @@ def append_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> None:
             handle.write("\n")
 
 
+def write_events_json(path: Path, records: Iterable[dict[str, Any]]) -> None:
+    """Write all events as a single pretty-printed JSON array.
+
+    This is used instead of JSONL when a structured JSON file is preferred.
+    """
+    payload = list(records)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)

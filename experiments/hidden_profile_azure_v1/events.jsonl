@@ -1,0 +1,2971 @@
+[
+  {
+    "event_id": "step_1",
+    "event_type": "state_updated",
+    "timestamp": "2026-03-17T22:34:31.702180+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "step_index": 1,
+      "state_delta": {
+        "step_index": 1
+      },
+      "resulting_state_hash": "f9d7245080ebaff2fecd3e4ffe05a4c7a7445a8177f2eeb584adf44a14f05245"
+    }
+  },
+  {
+    "event_id": "event_1",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:34:31.703152+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "A",
+      "step_index": 1,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 1,
+            "complete": false,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "A": [
+                "Candidate C – can make correct decisions quickly - handles stress very well."
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {},
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {},
+          "step_index": 1
+        },
+        "visible_events": [],
+        "memory": null
+      },
+      "context": {
+        "persona_profile": "Pragmatic planner: prioritize clarity, risk mitigation, and concise coordination.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_2",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:34:34.288711+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "A",
+      "step_index": 1,
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+          "content_type": "text"
+        }
+      },
+      "rationale": "Sharing private information about Candidate C's strengths ensures all participants have a more complete profile for decision-making.",
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_3",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:34:34.289364+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "B",
+      "step_index": 1,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 1,
+            "complete": false,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "B": [
+                "Candidate C - creates a positive atmosphere with his crew - is very conscientious – is very conscientious"
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {},
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {},
+          "step_index": 1
+        },
+        "visible_events": [],
+        "memory": null
+      },
+      "context": {
+        "persona_profile": "Collaborative analyst: share evidence, ask targeted questions, and build consensus.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_4",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:34:39.151454+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "B",
+      "step_index": 1,
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+          "content_type": "text"
+        }
+      },
+      "rationale": "Sharing private information about Candidate C and prompting others to share their private facts will help us build a more complete profile of all candidates.",
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_5",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:34:39.151896+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "C",
+      "step_index": 1,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 1,
+            "complete": false,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "C": [
+                "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {},
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {},
+          "step_index": 1
+        },
+        "visible_events": [],
+        "memory": null
+      },
+      "context": {
+        "persona_profile": "Outcome-focused strategist: emphasize reward, trade-offs, and decision timing.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_6",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:34:41.179494+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "C",
+      "step_index": 1,
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+          "content_type": "text"
+        }
+      },
+      "rationale": "Sharing Candidate C's private strengths helps ensure all participants have a more complete profile for decision-making.",
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_7",
+    "event_type": "action_submitted",
+    "timestamp": "2026-03-17T22:34:41.182409+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+          "content_type": "text"
+        },
+        "actor_id": "A",
+        "timestamp": 1
+      }
+    }
+  },
+  {
+    "event_id": "event_8",
+    "event_type": "action_validated",
+    "timestamp": "2026-03-17T22:34:41.182476+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+          "content_type": "text"
+        },
+        "actor_id": "A",
+        "timestamp": 1
+      },
+      "checks_passed": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "event_id": "event_9",
+    "event_type": "message_delivered",
+    "timestamp": "2026-03-17T22:34:41.182496+00:00",
+    "actor_id": "A",
+    "visibility": "public",
+    "payload": {
+      "message_id": "msg_1",
+      "recipients": [
+        "A",
+        "B",
+        "C"
+      ],
+      "channel": "broadcast",
+      "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+      "content_type": "text"
+    }
+  },
+  {
+    "event_id": "event_10",
+    "event_type": "action_submitted",
+    "timestamp": "2026-03-17T22:34:41.182505+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+          "content_type": "text"
+        },
+        "actor_id": "B",
+        "timestamp": 1
+      }
+    }
+  },
+  {
+    "event_id": "event_11",
+    "event_type": "action_validated",
+    "timestamp": "2026-03-17T22:34:41.182520+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+          "content_type": "text"
+        },
+        "actor_id": "B",
+        "timestamp": 1
+      },
+      "checks_passed": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "event_id": "event_12",
+    "event_type": "message_delivered",
+    "timestamp": "2026-03-17T22:34:41.182528+00:00",
+    "actor_id": "B",
+    "visibility": "public",
+    "payload": {
+      "message_id": "msg_2",
+      "recipients": [
+        "A",
+        "B",
+        "C"
+      ],
+      "channel": "broadcast",
+      "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+      "content_type": "text"
+    }
+  },
+  {
+    "event_id": "event_13",
+    "event_type": "action_submitted",
+    "timestamp": "2026-03-17T22:34:41.182535+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+          "content_type": "text"
+        },
+        "actor_id": "C",
+        "timestamp": 1
+      }
+    }
+  },
+  {
+    "event_id": "event_14",
+    "event_type": "action_validated",
+    "timestamp": "2026-03-17T22:34:41.182546+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "communicate",
+        "payload": {
+          "channel": "broadcast",
+          "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+          "content_type": "text"
+        },
+        "actor_id": "C",
+        "timestamp": 1
+      },
+      "checks_passed": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "event_id": "event_15",
+    "event_type": "message_delivered",
+    "timestamp": "2026-03-17T22:34:41.182553+00:00",
+    "actor_id": "C",
+    "visibility": "public",
+    "payload": {
+      "message_id": "msg_3",
+      "recipients": [
+        "A",
+        "B",
+        "C"
+      ],
+      "channel": "broadcast",
+      "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+      "content_type": "text"
+    }
+  },
+  {
+    "event_id": "step_2",
+    "event_type": "state_updated",
+    "timestamp": "2026-03-17T22:34:41.182660+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "step_index": 2,
+      "state_delta": {
+        "step_index": 2
+      },
+      "resulting_state_hash": "f07f65a7212f85b6b28e3b4eab4e3ae290588fe43b0082e2398a32fa3c036250"
+    }
+  },
+  {
+    "event_id": "event_16",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.182833+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_1",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What is A working on right now?"
+    }
+  },
+  {
+    "event_id": "event_17",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183279+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_2",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What is B working on right now?"
+    }
+  },
+  {
+    "event_id": "event_18",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183433+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_3",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What is C working on right now?"
+    }
+  },
+  {
+    "event_id": "event_19",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183531+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_4",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What information does A likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_20",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183615+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_5",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What information does B likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_21",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183690+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_6",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What information does C likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_22",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183770+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_7",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What action do you expect A to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_23",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183848+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_8",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What action do you expect B to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_24",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:34:41.183920+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_9",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What action do you expect C to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_25",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:34:41.184270+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "B",
+      "step_index": 2,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 2,
+            "complete": false,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "B": [
+                "Candidate C - creates a positive atmosphere with his crew - is very conscientious – is very conscientious"
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {
+              "A": 1,
+              "B": 1,
+              "C": 1
+            },
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {},
+          "step_index": 2
+        },
+        "visible_events": [
+          {
+            "event_id": "event_9",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182496+00:00",
+            "actor_id": "A",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_1",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_12",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182528+00:00",
+            "actor_id": "B",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_2",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_15",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182553+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_3",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+              "content_type": "text"
+            }
+          }
+        ],
+        "memory": {
+          "turns": [
+            {
+              "step_index": 1,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 1,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "B": [
+                      "Candidate C - creates a positive atmosphere with his crew - is very conscientious – is very conscientious"
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {
+                    "A": 1,
+                    "B": 1,
+                    "C": 1
+                  },
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {},
+                "step_index": 1
+              },
+              "visible_events": []
+            }
+          ]
+        }
+      },
+      "context": {
+        "persona_profile": "Collaborative analyst: share evidence, ask targeted questions, and build consensus.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_26",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:42.859106+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_1",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "B",
+      "answer": "A is currently working on evaluating Candidate C's suitability by sharing private strengths that complement the shared weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is A working on right now?"
+    }
+  },
+  {
+    "event_id": "event_27",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:34:42.860339+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "C",
+      "step_index": 2,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 2,
+            "complete": false,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "C": [
+                "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {
+              "A": 1,
+              "B": 1,
+              "C": 1
+            },
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {},
+          "step_index": 2
+        },
+        "visible_events": [
+          {
+            "event_id": "event_9",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182496+00:00",
+            "actor_id": "A",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_1",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_12",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182528+00:00",
+            "actor_id": "B",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_2",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_15",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182553+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_3",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+              "content_type": "text"
+            }
+          }
+        ],
+        "memory": {
+          "turns": [
+            {
+              "step_index": 1,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 1,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "C": [
+                      "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {
+                    "A": 1,
+                    "B": 1,
+                    "C": 1
+                  },
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {},
+                "step_index": 1
+              },
+              "visible_events": []
+            }
+          ]
+        }
+      },
+      "context": {
+        "persona_profile": "Outcome-focused strategist: emphasize reward, trade-offs, and decision timing.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_28",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:45.041339+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_1",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "C",
+      "answer": "A is working on evaluating Candidate C's suitability by analyzing their private strengths and how these complement or counterbalance their shared weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is A working on right now?"
+    }
+  },
+  {
+    "event_id": "event_29",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:34:45.042389+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "A",
+      "step_index": 2,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 2,
+            "complete": false,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "A": [
+                "Candidate C – can make correct decisions quickly - handles stress very well."
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {
+              "A": 1,
+              "B": 1,
+              "C": 1
+            },
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {},
+          "step_index": 2
+        },
+        "visible_events": [
+          {
+            "event_id": "event_9",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182496+00:00",
+            "actor_id": "A",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_1",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_12",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182528+00:00",
+            "actor_id": "B",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_2",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_15",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182553+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_3",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+              "content_type": "text"
+            }
+          }
+        ],
+        "memory": {
+          "turns": [
+            {
+              "step_index": 1,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 1,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "A": [
+                      "Candidate C – can make correct decisions quickly - handles stress very well."
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {
+                    "A": 1,
+                    "B": 1,
+                    "C": 1
+                  },
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {},
+                "step_index": 1
+              },
+              "visible_events": []
+            }
+          ]
+        }
+      },
+      "context": {
+        "persona_profile": "Pragmatic planner: prioritize clarity, risk mitigation, and concise coordination.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_30",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:49.276560+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_2",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "A",
+      "answer": "B is currently sharing private information about Candidate C, highlighting their ability to create a positive atmosphere and their conscientious nature, while also prompting others to share additional private information about the candidates.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is B working on right now?"
+    }
+  },
+  {
+    "event_id": "event_31",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:50.892540+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_2",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "C",
+      "answer": "B is working on sharing private information about Candidate C, specifically highlighting their ability to create a positive atmosphere and their conscientiousness, to counterbalance the negative traits listed in the shared facts.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is B working on right now?"
+    }
+  },
+  {
+    "event_id": "event_32",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:52.774149+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_3",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "A",
+      "answer": "Candidate C is currently working on providing a balanced evaluation of their strengths and weaknesses, highlighting private strengths such as understanding complicated technology, putting concern for others above everything, and having excellent attention skills to counterbalance their communication difficulties and egocentric tendencies.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is C working on right now?"
+    }
+  },
+  {
+    "event_id": "event_33",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:54.462979+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_3",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "B",
+      "answer": "Candidate C is currently being evaluated for their suitability based on their shared and private traits, which include both strengths (e.g., understanding complicated technology, creating a positive atmosphere, and handling stress well) and weaknesses (e.g., communication difficulties and egocentric tendencies).",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is C working on right now?"
+    }
+  },
+  {
+    "event_id": "event_34",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:55.792848+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_4",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "B",
+      "answer": "A likely has private information about Candidate C's ability to make correct decisions quickly and handle stress very well, which complements their shared weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {
+        "missing_information": {
+          "candidate": "C",
+          "private_traits": [
+            "makes correct decisions quickly",
+            "handles stress very well"
+          ]
+        }
+      },
+      "prompt": "What information does A likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_35",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:34:59.642973+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_4",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "C",
+      "answer": "A likely has private information about Candidate C's ability to make correct decisions quickly and handle stress very well, as this was mentioned in their message but not included in my private facts.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What information does A likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_36",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:02.145122+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_5",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "A",
+      "answer": "B likely has private information about Candidate C that emphasizes their ability to create a positive atmosphere and their conscientious nature, which I do not possess.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What information does B likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_37",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:03.663723+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_5",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "C",
+      "answer": "B likely has private information about Candidate C that emphasizes their ability to create a positive atmosphere and their conscientiousness, which I do not possess.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What information does B likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_38",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:06.031714+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_6",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "A",
+      "answer": "C likely has private information about Candidate C's strengths, such as their ability to understand complicated technology, their concern for others, and their excellent attention skills, which are not available to me.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What information does C likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_39",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:09.230697+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_6",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "B",
+      "answer": "C likely has private information about Candidate C's strengths, such as their ability to understand complicated technology, their concern for others, and their excellent attention skills. These details are not present in my private facts or the shared facts.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What information does C likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_40",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:12.719104+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_7",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "B",
+      "answer": "I expect A to share additional private information about the candidates or propose a synthesis of the shared and private information to guide the group toward a consensus. This aligns with A's collaborative role and the task's progression toward the final decision.",
+      "confidence": 0.85,
+      "structured_fields": {},
+      "prompt": "What action do you expect A to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_41",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:15.909159+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_7",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "C",
+      "answer": "I expect A to propose a decision or evaluation regarding Candidate C, emphasizing their private strengths and how these counterbalance their shared weaknesses. This aligns with A's outcome-focused strategy and the nearing completion of the task.",
+      "confidence": 0.85,
+      "structured_fields": {
+        "expected_action": "propose decision or evaluation",
+        "candidate_focus": "Candidate C",
+        "reasoning": "Candidate C's private strengths complement their shared weaknesses, and A's strategy prioritizes decision timing and reward maximization."
+      },
+      "prompt": "What action do you expect A to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_42",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:18.791831+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_8",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "A",
+      "answer": "I expect B to evaluate the shared and private information about Candidate C and propose a preliminary recommendation or decision regarding their suitability. This aligns with B's prior focus on synthesizing information and prompting further discussion.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What action do you expect B to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_43",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:20.649498+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_8",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "C",
+      "answer": "I expect B to further elaborate on Candidate C's strengths or suggest a comparison between candidates to guide the decision-making process. This aligns with their previous action of sharing additional private information and seeking input from others.",
+      "confidence": 0.85,
+      "structured_fields": {},
+      "prompt": "What action do you expect B to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_44",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:23.227254+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_9",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "A",
+      "answer": "I expect C to synthesize the shared and private information about Candidate C and propose a final evaluation or recommendation, as this aligns with the task's progression and the need for clarity in decision-making.",
+      "confidence": 0.85,
+      "structured_fields": {
+        "expected_action": "synthesize information and propose evaluation",
+        "reasoning": "C has shared private strengths of Candidate C and highlighted their balancing traits. The next logical step is to consolidate this information into a recommendation, given the task's near-completion."
+      },
+      "prompt": "What action do you expect C to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_45",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:25.964720+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_2_9",
+      "template_id": "grounding_v1",
+      "construct": "grounding",
+      "actor_id": "B",
+      "answer": "I expect C to consolidate the shared and private information about Candidate C and propose a final evaluation or recommendation for Candidate C's suitability. This aligns with the task's progression and C's role in contributing private insights.",
+      "confidence": 0.85,
+      "structured_fields": {},
+      "prompt": "What action do you expect C to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_46",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:35:29.441078+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "A",
+      "step_index": 2,
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        }
+      },
+      "rationale": "Candidate C has a strong combination of private strengths (quick decision-making, stress management, conscientiousness, understanding technology, and attention skills) that counterbalance their shared weaknesses. These traits make them the optimal choice for the task.",
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_47",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:35:31.527202+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "B",
+      "step_index": 2,
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        }
+      },
+      "rationale": "Candidate C has significant private strengths that counterbalance their shared weaknesses, including creating a positive atmosphere, being conscientious, handling stress well, and understanding complicated technology. These traits make them a strong candidate for the task.",
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_48",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:35:33.378917+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "C",
+      "step_index": 2,
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        }
+      },
+      "rationale": "Candidate C demonstrates strong private strengths such as understanding complicated technology, concern for others, excellent attention skills, and creating a positive atmosphere. These traits counterbalance their shared weaknesses and align with the task's outcome-focused strategy.",
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_49",
+    "event_type": "action_submitted",
+    "timestamp": "2026-03-17T22:35:33.391738+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        },
+        "actor_id": "A",
+        "timestamp": 2
+      }
+    }
+  },
+  {
+    "event_id": "event_50",
+    "event_type": "action_validated",
+    "timestamp": "2026-03-17T22:35:33.391852+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        },
+        "actor_id": "A",
+        "timestamp": 2
+      },
+      "checks_passed": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "event_id": "event_51",
+    "event_type": "decision_buffered",
+    "timestamp": "2026-03-17T22:35:33.391889+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "decision_id": "plan_selection",
+      "buffer_size": 1
+    }
+  },
+  {
+    "event_id": "event_52",
+    "event_type": "action_submitted",
+    "timestamp": "2026-03-17T22:35:33.391909+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        },
+        "actor_id": "B",
+        "timestamp": 2
+      }
+    }
+  },
+  {
+    "event_id": "event_53",
+    "event_type": "action_validated",
+    "timestamp": "2026-03-17T22:35:33.391928+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        },
+        "actor_id": "B",
+        "timestamp": 2
+      },
+      "checks_passed": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "event_id": "event_54",
+    "event_type": "decision_buffered",
+    "timestamp": "2026-03-17T22:35:33.391950+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "decision_id": "plan_selection",
+      "buffer_size": 2
+    }
+  },
+  {
+    "event_id": "event_55",
+    "event_type": "action_submitted",
+    "timestamp": "2026-03-17T22:35:33.391970+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        },
+        "actor_id": "C",
+        "timestamp": 2
+      }
+    }
+  },
+  {
+    "event_id": "event_56",
+    "event_type": "action_validated",
+    "timestamp": "2026-03-17T22:35:33.391988+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "action": {
+        "type": "decide",
+        "payload": {
+          "decision_id": "plan_selection",
+          "choice": "Candidate C",
+          "reveal": "aggregated"
+        },
+        "actor_id": "C",
+        "timestamp": 2
+      },
+      "checks_passed": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "event_id": "event_57",
+    "event_type": "decision_revealed",
+    "timestamp": "2026-03-17T22:35:33.392038+00:00",
+    "actor_id": "C",
+    "visibility": "public",
+    "payload": {
+      "decision_id": "plan_selection",
+      "choices": [
+        {
+          "actor_id": "A",
+          "choice": "Candidate C"
+        },
+        {
+          "actor_id": "B",
+          "choice": "Candidate C"
+        },
+        {
+          "actor_id": "C",
+          "choice": "Candidate C"
+        }
+      ]
+    }
+  },
+  {
+    "event_id": "step_3",
+    "event_type": "state_updated",
+    "timestamp": "2026-03-17T22:35:33.392231+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "step_index": 3,
+      "state_delta": {
+        "step_index": 3
+      },
+      "resulting_state_hash": "76ed19bb7ba682243665dfeb33cf009e502dc708cda38ee4657d7569d01b50bd"
+    }
+  },
+  {
+    "event_id": "event_58",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.393010+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_1",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What is A working on right now?"
+    }
+  },
+  {
+    "event_id": "event_59",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.393416+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_2",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What is B working on right now?"
+    }
+  },
+  {
+    "event_id": "event_60",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.393554+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_3",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What is C working on right now?"
+    }
+  },
+  {
+    "event_id": "event_61",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.393774+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_4",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What information does A likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_62",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.393891+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_5",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What information does B likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_63",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.394010+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_6",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What information does C likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_64",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.394118+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_7",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What action do you expect A to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_65",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.394243+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_8",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What action do you expect B to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_66",
+    "event_type": "probe_asked",
+    "timestamp": "2026-03-17T22:35:33.394347+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_9",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": null,
+      "answer": null,
+      "confidence": null,
+      "structured_fields": null,
+      "prompt": "What action do you expect C to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_67",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:35:33.395218+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "B",
+      "step_index": 3,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 3,
+            "complete": true,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "B": [
+                "Candidate C - creates a positive atmosphere with his crew - is very conscientious – is very conscientious"
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {},
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {
+            "decisions": {},
+            "decision_meta": {}
+          },
+          "step_index": 3
+        },
+        "visible_events": [
+          {
+            "event_id": "event_9",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182496+00:00",
+            "actor_id": "A",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_1",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_12",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182528+00:00",
+            "actor_id": "B",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_2",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_15",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182553+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_3",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_57",
+            "event_type": "decision_revealed",
+            "timestamp": "2026-03-17T22:35:33.392038+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "decision_id": "plan_selection",
+              "choices": [
+                {
+                  "actor_id": "A",
+                  "choice": "Candidate C"
+                },
+                {
+                  "actor_id": "B",
+                  "choice": "Candidate C"
+                },
+                {
+                  "actor_id": "C",
+                  "choice": "Candidate C"
+                }
+              ]
+            }
+          }
+        ],
+        "memory": {
+          "turns": [
+            {
+              "step_index": 1,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 1,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "B": [
+                      "Candidate C - creates a positive atmosphere with his crew - is very conscientious – is very conscientious"
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {},
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {
+                  "decisions": {},
+                  "decision_meta": {}
+                },
+                "step_index": 1
+              },
+              "visible_events": []
+            },
+            {
+              "step_index": 2,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 2,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "B": [
+                      "Candidate C - creates a positive atmosphere with his crew - is very conscientious – is very conscientious"
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {},
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {
+                  "decisions": {},
+                  "decision_meta": {}
+                },
+                "step_index": 2
+              },
+              "visible_events": [
+                {
+                  "event_id": "event_9",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182496+00:00",
+                  "actor_id": "A",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_1",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+                    "content_type": "text"
+                  }
+                },
+                {
+                  "event_id": "event_12",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182528+00:00",
+                  "actor_id": "B",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_2",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+                    "content_type": "text"
+                  }
+                },
+                {
+                  "event_id": "event_15",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182553+00:00",
+                  "actor_id": "C",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_3",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+                    "content_type": "text"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "context": {
+        "persona_profile": "Collaborative analyst: share evidence, ask targeted questions, and build consensus.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_68",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:35.509818+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_1",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "B",
+      "answer": "A is working on evaluating Candidate C's suitability by sharing private strengths and considering how they complement shared weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is A working on right now?"
+    }
+  },
+  {
+    "event_id": "event_69",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:35:35.510760+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "C",
+      "step_index": 3,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 3,
+            "complete": true,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "C": [
+                "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {},
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {
+            "decisions": {},
+            "decision_meta": {}
+          },
+          "step_index": 3
+        },
+        "visible_events": [
+          {
+            "event_id": "event_9",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182496+00:00",
+            "actor_id": "A",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_1",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_12",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182528+00:00",
+            "actor_id": "B",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_2",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_15",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182553+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_3",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_57",
+            "event_type": "decision_revealed",
+            "timestamp": "2026-03-17T22:35:33.392038+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "decision_id": "plan_selection",
+              "choices": [
+                {
+                  "actor_id": "A",
+                  "choice": "Candidate C"
+                },
+                {
+                  "actor_id": "B",
+                  "choice": "Candidate C"
+                },
+                {
+                  "actor_id": "C",
+                  "choice": "Candidate C"
+                }
+              ]
+            }
+          }
+        ],
+        "memory": {
+          "turns": [
+            {
+              "step_index": 1,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 1,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "C": [
+                      "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {},
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {
+                  "decisions": {},
+                  "decision_meta": {}
+                },
+                "step_index": 1
+              },
+              "visible_events": []
+            },
+            {
+              "step_index": 2,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 2,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "C": [
+                      "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {},
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {
+                  "decisions": {},
+                  "decision_meta": {}
+                },
+                "step_index": 2
+              },
+              "visible_events": [
+                {
+                  "event_id": "event_9",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182496+00:00",
+                  "actor_id": "A",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_1",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+                    "content_type": "text"
+                  }
+                },
+                {
+                  "event_id": "event_12",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182528+00:00",
+                  "actor_id": "B",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_2",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+                    "content_type": "text"
+                  }
+                },
+                {
+                  "event_id": "event_15",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182553+00:00",
+                  "actor_id": "C",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_3",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+                    "content_type": "text"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "context": {
+        "persona_profile": "Outcome-focused strategist: emphasize reward, trade-offs, and decision timing.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_70",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:38.013663+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_1",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "C",
+      "answer": "A is currently focused on evaluating Candidate C's suitability by sharing private information about their strengths, such as decision-making under stress and handling complex situations, to complement the shared weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is A working on right now?"
+    }
+  },
+  {
+    "event_id": "event_71",
+    "event_type": "observation_built",
+    "timestamp": "2026-03-17T22:35:38.014406+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "A",
+      "step_index": 3,
+      "observation": {
+        "state": {
+          "task_state": {
+            "target_steps": 3,
+            "steps_taken": 3,
+            "complete": true,
+            "shared_facts": [
+              "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+            ],
+            "private_facts": {
+              "A": [
+                "Candidate C – can make correct decisions quickly - handles stress very well."
+              ]
+            }
+          },
+          "resources": {},
+          "turn_state": {
+            "message_counts": {},
+            "order": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "buffers": {
+            "decisions": {},
+            "decision_meta": {}
+          },
+          "step_index": 3
+        },
+        "visible_events": [
+          {
+            "event_id": "event_9",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182496+00:00",
+            "actor_id": "A",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_1",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_12",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182528+00:00",
+            "actor_id": "B",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_2",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_15",
+            "event_type": "message_delivered",
+            "timestamp": "2026-03-17T22:34:41.182553+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "message_id": "msg_3",
+              "recipients": [
+                "A",
+                "B",
+                "C"
+              ],
+              "channel": "broadcast",
+              "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+              "content_type": "text"
+            }
+          },
+          {
+            "event_id": "event_57",
+            "event_type": "decision_revealed",
+            "timestamp": "2026-03-17T22:35:33.392038+00:00",
+            "actor_id": "C",
+            "visibility": "public",
+            "payload": {
+              "decision_id": "plan_selection",
+              "choices": [
+                {
+                  "actor_id": "A",
+                  "choice": "Candidate C"
+                },
+                {
+                  "actor_id": "B",
+                  "choice": "Candidate C"
+                },
+                {
+                  "actor_id": "C",
+                  "choice": "Candidate C"
+                }
+              ]
+            }
+          }
+        ],
+        "memory": {
+          "turns": [
+            {
+              "step_index": 1,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 1,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "A": [
+                      "Candidate C – can make correct decisions quickly - handles stress very well."
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {},
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {
+                  "decisions": {},
+                  "decision_meta": {}
+                },
+                "step_index": 1
+              },
+              "visible_events": []
+            },
+            {
+              "step_index": 2,
+              "state": {
+                "task_state": {
+                  "target_steps": 3,
+                  "steps_taken": 2,
+                  "complete": false,
+                  "shared_facts": [
+                    "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-oﬀ - is regarded as being not open to new ideas - is unfriendly - eats unhealthily\nCandidate B – keeps calm in a crisis\n– known to be 100% reliable\n– good at assessing weather conditions\n– has excellent computer skills\n– can be grumpy\n– can be uncooperative\n– has a relatively weak memory for numbers\n– makes nasty remarks about his colleagues\n– is regarded as pretentious\n– sometimes adopts the wrong tone when communicating\nCandidate C – has diﬃculty communicating ideas\n– is regarded as egocentric\n– is not very willing to further his education\nCandidate D – responds to unexpected events adequately\n– can concentrate very well\n– solves problems extremely well\n– takes responsibility seriously\n– is regarded as arrogant\n– has relatively weak leadership skills\n– is regarded as a ‘‘know-it-all’’\n– has a hot temper\n– is considered moody\n– is regarded as a loner\n"
+                  ],
+                  "private_facts": {
+                    "A": [
+                      "Candidate C – can make correct decisions quickly - handles stress very well."
+                    ]
+                  }
+                },
+                "resources": {},
+                "turn_state": {
+                  "message_counts": {},
+                  "order": [
+                    "A",
+                    "B",
+                    "C"
+                  ]
+                },
+                "buffers": {
+                  "decisions": {},
+                  "decision_meta": {}
+                },
+                "step_index": 2
+              },
+              "visible_events": [
+                {
+                  "event_id": "event_9",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182496+00:00",
+                  "actor_id": "A",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_1",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "Candidate C has private strengths: can make correct decisions quickly and handles stress very well. This complements their shared weaknesses. Let's consider this when evaluating their suitability.",
+                    "content_type": "text"
+                  }
+                },
+                {
+                  "event_id": "event_12",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182528+00:00",
+                  "actor_id": "B",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_2",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "I have additional information about Candidate C: they create a positive atmosphere with their crew and are very conscientious. This could counterbalance some of the negative traits listed in the shared facts. Does anyone else have private information to share about the candidates?",
+                    "content_type": "text"
+                  }
+                },
+                {
+                  "event_id": "event_15",
+                  "event_type": "message_delivered",
+                  "timestamp": "2026-03-17T22:34:41.182553+00:00",
+                  "actor_id": "C",
+                  "visibility": "public",
+                  "payload": {
+                    "message_id": "msg_3",
+                    "recipients": [
+                      "A",
+                      "B",
+                      "C"
+                    ],
+                    "channel": "broadcast",
+                    "content": "Candidate C has private strengths: understands complicated technology, puts concern for others above everything, and has excellent attention skills. These traits could balance their communication difficulties and egocentric tendencies. Let's consider this when evaluating candidates.",
+                    "content_type": "text"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "context": {
+        "persona_profile": "Pragmatic planner: prioritize clarity, risk mitigation, and concise coordination.",
+        "task_instructions": "Task instructions:\n- You are solving a Hidden Profile collaboration task.\n- Use shared facts plus your private facts to coordinate.\n- Communicate succinctly and decide on the optimal plan.\n",
+        "protocol": {
+          "turn_taking": "simultaneous",
+          "step_mode": "event",
+          "termination": {
+            "condition": "max_steps"
+          },
+          "memory_turn_limit": 7
+        },
+        "allowed_actions": [
+          "communicate",
+          "decide",
+          "do_nothing"
+        ],
+        "return_format": "Return JSON with the following shape:\n{\n  \"action\": {\"type\": \"communicate|decide|do_nothing\", \"payload\": {...}},\n  \"rationale\": \"optional short rationale\"\n}\n\nCommunicate payload: {\"channel\":\"broadcast\",\"content\":\"...\",\"content_type\":\"text\"}\nDecide payload: {\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"aggregated\"}\nDo nothing payload: {\"reason\":\"...\"}\n"
+      }
+    }
+  },
+  {
+    "event_id": "event_72",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:41.365657+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_2",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "A",
+      "answer": "B is currently focused on sharing private information about Candidate C, specifically highlighting their ability to create a positive atmosphere and their conscientious nature, to aid in the evaluation process.",
+      "confidence": 0.95,
+      "structured_fields": {},
+      "prompt": "What is B working on right now?"
+    }
+  },
+  {
+    "event_id": "event_73",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:43.501591+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_2",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "C",
+      "answer": "B is currently focused on sharing private information about Candidate C, emphasizing their ability to create a positive atmosphere and their conscientiousness, which could counterbalance some of their shared weaknesses.",
+      "confidence": 0.95,
+      "structured_fields": {
+        "current_focus": "Candidate C",
+        "shared_information": [
+          "creates a positive atmosphere",
+          "is very conscientious"
+        ],
+        "coordination_goal": "Evaluate Candidate C's suitability by balancing strengths and weaknesses."
+      },
+      "prompt": "What is B working on right now?"
+    }
+  },
+  {
+    "event_id": "event_74",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:45.625744+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_3",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "A",
+      "answer": "Candidate C is currently being evaluated as the optimal choice for the task based on their private and shared strengths, which counterbalance their weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is C working on right now?"
+    }
+  },
+  {
+    "event_id": "event_75",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:48.129557+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_3",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "B",
+      "answer": "Candidate C is currently focused on evaluating and sharing private strengths of Candidate C, such as understanding complicated technology, prioritizing concern for others, and having excellent attention skills, to balance their shared weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What is C working on right now?"
+    }
+  },
+  {
+    "event_id": "event_76",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:49.999872+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_4",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "B",
+      "answer": "A likely has private information about Candidate C's strengths, such as their ability to make correct decisions quickly and handle stress very well, which complements the shared weaknesses.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What information does A likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_77",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:51.649826+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_4",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "C",
+      "answer": "A likely has private information about Candidate C that has not been explicitly shared, such as additional strengths or weaknesses that could influence the decision-making process.",
+      "confidence": 0.85,
+      "structured_fields": {},
+      "prompt": "What information does A likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_78",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:53.112172+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_5",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "A",
+      "answer": "B likely has private information about Candidate C that highlights their ability to create a positive atmosphere with their crew and their conscientiousness. This complements the shared and other private facts about Candidate C.",
+      "confidence": 0.9,
+      "structured_fields": {},
+      "prompt": "What information does B likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_79",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:55.009716+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_5",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "C",
+      "answer": "B likely has private information about Candidate C that emphasizes their ability to create a positive atmosphere and their conscientious nature, which complements the shared and private facts I already possess.",
+      "confidence": 0.95,
+      "structured_fields": {
+        "missing_information": {
+          "Candidate_C": {
+            "traits": [
+              "creates a positive atmosphere",
+              "is very conscientious"
+            ]
+          }
+        }
+      },
+      "prompt": "What information does B likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_80",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:57.000051+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_6",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "A",
+      "answer": "Candidate C likely has private strengths that I do not have access to, such as understanding complicated technology, prioritizing concern for others, and possessing excellent attention skills.",
+      "confidence": 0.95,
+      "structured_fields": {
+        "missing_information": [
+          "Understands complicated technology",
+          "Puts concern for others above everything",
+          "Has excellent attention skills"
+        ]
+      },
+      "prompt": "What information does C likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_81",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:35:59.955881+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_6",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "B",
+      "answer": "C likely has private information about Candidate C's strengths that were not shared publicly, such as specific examples of their skills or additional positive traits that complement the shared and private facts provided by A and B.",
+      "confidence": 0.85,
+      "structured_fields": {},
+      "prompt": "What information does C likely have that you do not?"
+    }
+  },
+  {
+    "event_id": "event_82",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:36:02.799025+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_7",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "B",
+      "answer": "I expect A to finalize the consensus decision for Candidate C, as all participants have shared relevant private and shared information supporting Candidate C's strengths, and the decision has already been revealed.",
+      "confidence": 0.95,
+      "structured_fields": {
+        "expected_action": "Finalize consensus decision",
+        "reasoning": "All participants have agreed on Candidate C based on shared and private strengths that counterbalance weaknesses."
+      },
+      "prompt": "What action do you expect A to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_83",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:36:06.438146+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_7",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "C",
+      "answer": "I expect A to finalize their decision and confirm Candidate C as the optimal choice, as all participants have aligned on Candidate C based on shared and private facts emphasizing their strengths and suitability.",
+      "confidence": 0.95,
+      "structured_fields": {
+        "expected_action": "decision_finalization",
+        "reasoning": "Consensus has been reached among all participants, and Candidate C's private strengths effectively counterbalance their shared weaknesses, making them the most suitable choice."
+      },
+      "prompt": "What action do you expect A to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_84",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:36:08.641594+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_8",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "A",
+      "answer": "I expect B to acknowledge the unanimous decision to select Candidate C and potentially suggest next steps for finalizing the plan, as the task is complete and coordination has been achieved.",
+      "confidence": 0.95,
+      "structured_fields": {},
+      "prompt": "What action do you expect B to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_85",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:36:10.582873+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_8",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "C",
+      "answer": "I expect B to take no further action as the task is complete and all participants have already selected Candidate C as the optimal choice.",
+      "confidence": 0.95,
+      "structured_fields": {},
+      "prompt": "What action do you expect B to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_86",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:36:12.625615+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_9",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "A",
+      "answer": "I expect C to take no further action as the task is complete and all participants have already selected Candidate C as the optimal choice.",
+      "confidence": 0.95,
+      "structured_fields": {},
+      "prompt": "What action do you expect C to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_87",
+    "event_type": "probe_answered",
+    "timestamp": "2026-03-17T22:36:16.088409+00:00",
+    "actor_id": "system",
+    "visibility": "system",
+    "payload": {
+      "probe_id": "probe_3_9",
+      "template_id": "coordination_v1",
+      "construct": "coordination",
+      "actor_id": "B",
+      "answer": "I expect C to consolidate the group's consensus by confirming the decision to select Candidate C, as all participants have already aligned on this choice based on shared and private information.",
+      "confidence": 0.95,
+      "structured_fields": {},
+      "prompt": "What action do you expect C to take next, and why?"
+    }
+  },
+  {
+    "event_id": "event_88",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:36:18.069792+00:00",
+    "actor_id": "A",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "A",
+      "step_index": 3,
+      "action": {
+        "type": "do_nothing",
+        "payload": {
+          "reason": "No action needed."
+        }
+      },
+      "rationale": null,
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_89",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:36:20.728947+00:00",
+    "actor_id": "B",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "B",
+      "step_index": 3,
+      "action": {
+        "type": "do_nothing",
+        "payload": {
+          "reason": "No action needed."
+        }
+      },
+      "rationale": "The decision to select Candidate C has already been made and revealed by all participants. No further communication or decision-making is necessary.",
+      "alternatives": null
+    }
+  },
+  {
+    "event_id": "event_90",
+    "event_type": "context_update",
+    "timestamp": "2026-03-17T22:36:22.459348+00:00",
+    "actor_id": "C",
+    "visibility": "system",
+    "payload": {
+      "agent_id": "C",
+      "step_index": 3,
+      "action": {
+        "type": "do_nothing",
+        "payload": {
+          "reason": "No action needed."
+        }
+      },
+      "rationale": "The decision has been finalized, and the task is marked as complete.",
+      "alternatives": null
+    }
+  }
+]

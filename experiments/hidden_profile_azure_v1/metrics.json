@@ -1,0 +1,65 @@
+{
+  "per_agent": {
+    "B": {
+      "probe_records": 12.0,
+      "probe_answered": 12.0,
+      "probe_unanswered": 0.0,
+      "probe_response_rate": 1.0,
+      "probe_confidence_mean": 0.8958333333333331,
+      "probe_construct_coordination": 6.0,
+      "probe_construct_grounding": 6.0,
+      "messages_received": 3.0,
+      "messages_sent": 1.0
+    },
+    "C": {
+      "probe_records": 12.0,
+      "probe_answered": 12.0,
+      "probe_unanswered": 0.0,
+      "probe_response_rate": 1.0,
+      "probe_confidence_mean": 0.9041666666666665,
+      "probe_construct_coordination": 6.0,
+      "probe_construct_grounding": 6.0,
+      "messages_received": 3.0,
+      "messages_sent": 1.0
+    },
+    "A": {
+      "probe_records": 12.0,
+      "probe_answered": 12.0,
+      "probe_unanswered": 0.0,
+      "probe_response_rate": 1.0,
+      "probe_confidence_mean": 0.9124999999999998,
+      "probe_construct_coordination": 6.0,
+      "probe_construct_grounding": 6.0,
+      "messages_sent": 1.0,
+      "messages_received": 3.0
+    }
+  },
+  "per_run": {
+    "steps_taken": 3.0,
+    "target_steps": 3.0,
+    "efficiency": 1.0,
+    "completed": 1.0,
+    "event_count_action_submitted": 6.0,
+    "event_count_action_validated": 6.0,
+    "event_count_context_update": 9.0,
+    "event_count_decision_buffered": 2.0,
+    "event_count_decision_revealed": 1.0,
+    "event_count_message_delivered": 3.0,
+    "event_count_observation_built": 9.0,
+    "event_count_probe_answered": 36.0,
+    "event_count_probe_asked": 18.0,
+    "event_count_state_updated": 3.0,
+    "action_submitted_communicate_count": 3.0,
+    "action_submitted_decide_count": 3.0,
+    "messages_sent": 3.0,
+    "messages_received": 9.0,
+    "decision_choice_count": 3.0,
+    "probe_records": 54.0,
+    "probe_answered": 36.0,
+    "probe_unanswered": 18.0,
+    "probe_response_rate": 0.6666666666666666,
+    "probe_confidence_mean": 0.9041666666666663,
+    "probe_construct_coordination": 27.0,
+    "probe_construct_grounding": 27.0
+  }
+}

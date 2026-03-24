@@ -1,0 +1,42 @@
+{
+  "run_id": "hidden_profile_try1",
+  "config_hash": "4c77d9063313ac8571fca96658ed31f5bd41c195f9fa438f3da3ecf2c0ed3167",
+  "model_metadata": [
+    {
+      "agent_id": "A",
+      "provider": "local",
+      "name": "dummy",
+      "version": null,
+      "temperature": 0.0,
+      "top_p": null,
+      "max_tokens": null
+    },
+    {
+      "agent_id": "B",
+      "provider": "local",
+      "name": "dummy",
+      "version": null,
+      "temperature": 0.0,
+      "top_p": null,
+      "max_tokens": null
+    }
+  ],
+  "prompt_versions": [
+    {
+      "template_id": "grounding_v1",
+      "version": "v1",
+      "prompt_hash": "b29d8789b36f72f174b42dccaf9e1b3e09532ca1522b6bd3e5337e0a65084264"
+    },
+    {
+      "template_id": "coordination_v1",
+      "version": "v1",
+      "prompt_hash": "24af107c3277c91ce3268bb787e12c017a482271160ceec210e9b521de03c449"
+    }
+  ],
+  "timestamp": "2026-03-16T19:30:32.819046+00:00",
+  "seeds": {
+    "random": 7
+  },
+  "trace_schema_version": "v0",
+  "code_version": "a100d5ad03e17b7d36759e374fef0ebfbd9cc84e"
+}

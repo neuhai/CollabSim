@@ -1,0 +1,28 @@
+{
+  "run_id": "accumulator_v1",
+  "config_hash": "9868d312d6ea7517d457cdc4f23a852eb7c80a710dda04628970d8916f7b5efe",
+  "model_metadata": [
+    {
+      "agent_id": "A",
+      "provider": "mock",
+      "name": "mock-model",
+      "version": null,
+      "temperature": null,
+      "top_p": null,
+      "max_tokens": null
+    }
+  ],
+  "prompt_versions": [
+    {
+      "template_id": "grounding_v1",
+      "version": "v1",
+      "prompt_hash": "b29d8789b36f72f174b42dccaf9e1b3e09532ca1522b6bd3e5337e0a65084264"
+    }
+  ],
+  "timestamp": "2026-03-16T19:28:12.107795+00:00",
+  "seeds": {
+    "random": 321
+  },
+  "trace_schema_version": "v0",
+  "code_version": "a100d5ad03e17b7d36759e374fef0ebfbd9cc84e"
+}

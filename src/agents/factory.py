@@ -8,6 +8,7 @@ import random
 
 from src.agents.interface import AgentMetadata
 from src.agents.openai_agent import OpenAIAgent
+from src.agents.azure_agent import AzureOpenAIAgent
 from src.utils.env import load_text_file
 
 
@@ -58,36 +59,64 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
             continue
         provider = model.get("provider")
         name = model.get("name")
-        if provider != "openai":
-            continue
-        metadata = AgentMetadata(
-            agent_id=agent_id,
-            role=role,
-            model_provider=provider,
-            model_name=name,
-            model_version=model.get("version"),
-            temperature=model.get("temperature"),
-            top_p=model.get("top_p"),
-            max_tokens=model.get("max_tokens"),
-            prompt_version=model.get("prompt_version"),
-        )
-        persona_profile = _resolve_persona_profile(agent, persona_profiles, seed, agent_id)
-        system_prompt = system_prompt.strip() or "You are a collaborative agent in a research simulation."
-        agents[agent_id] = OpenAIAgent(
-            metadata=metadata,
-            allowed_actions=allowed_actions,
-            system_prompt=system_prompt,
-            persona_prompt_template=persona_prompt,
-            task_prompt_template=task_prompt,
-            protocol_prompt_template=protocol_prompt,
-            action_space_prompt_template=action_space_prompt,
-            return_format_prompt_template=return_format_prompt,
-            action_prompt_template=action_prompt,
-            probe_prompt_template=probe_prompt,
-            persona_profile=persona_profile,
-            protocol_context=config.get("protocol", {}) if isinstance(config.get("protocol"), dict) else {},
-            decide_reveal=decide_reveal if isinstance(decide_reveal, str) else None,
-        )
+        if provider == "openai":
+            metadata = AgentMetadata(
+                agent_id=agent_id,
+                role=role,
+                model_provider=provider,
+                model_name=name,
+                model_version=model.get("version"),
+                temperature=model.get("temperature"),
+                top_p=model.get("top_p"),
+                max_tokens=model.get("max_tokens"),
+                prompt_version=model.get("prompt_version"),
+            )
+            persona_profile = _resolve_persona_profile(agent, persona_profiles, seed, agent_id)
+            system_prompt = system_prompt.strip() or "You are a collaborative agent in a research simulation."
+            agents[agent_id] = OpenAIAgent(
+                metadata=metadata,
+                allowed_actions=allowed_actions,
+                system_prompt=system_prompt,
+                persona_prompt_template=persona_prompt,
+                task_prompt_template=task_prompt,
+                protocol_prompt_template=protocol_prompt,
+                action_space_prompt_template=action_space_prompt,
+                return_format_prompt_template=return_format_prompt,
+                action_prompt_template=action_prompt,
+                probe_prompt_template=probe_prompt,
+                persona_profile=persona_profile,
+                protocol_context=config.get("protocol", {}) if isinstance(config.get("protocol"), dict) else {},
+                decide_reveal=decide_reveal if isinstance(decide_reveal, str) else None,
+            )
+        elif provider == "azure":
+            metadata = AgentMetadata(
+                agent_id=agent_id,
+                role=role,
+                model_provider=provider,
+                model_name=name,
+                model_version=model.get("version"),
+                temperature=model.get("temperature"),
+                top_p=model.get("top_p"),
+                max_tokens=model.get("max_tokens"),
+                prompt_version=model.get("prompt_version"),
+            )
+            persona_profile = _resolve_persona_profile(agent, persona_profiles, seed, agent_id)
+            system_prompt = system_prompt.strip() or "You are a collaborative agent in a research simulation."
+            agents[agent_id] = AzureOpenAIAgent(
+                metadata=metadata,
+                allowed_actions=allowed_actions,
+                system_prompt=system_prompt,
+                persona_prompt_template=persona_prompt,
+                task_prompt_template=task_prompt,
+                protocol_prompt_template=protocol_prompt,
+                action_space_prompt_template=action_space_prompt,
+                return_format_prompt_template=return_format_prompt,
+                action_prompt_template=action_prompt,
+                probe_prompt_template=probe_prompt,
+                persona_profile=persona_profile,
+                protocol_context=config.get("protocol", {}) if isinstance(config.get("protocol"), dict) else {},
+                decide_reveal=decide_reveal if isinstance(decide_reveal, str) else None,
+            )
     return agents
 
 
