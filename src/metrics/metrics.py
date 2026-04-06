@@ -30,6 +30,14 @@ def _compute_event_metrics(
     proposal_created = 0
     proposal_responded = 0
     decision_choice_count = 0
+    trade_offers_created = 0
+    trade_offers_responded = 0
+    trade_offers_cancelled = 0
+    trade_accept_count = 0
+    orders_fulfilled_count = 0
+    investments_count = 0
+    investment_amount_total = 0.0
+    map_progress_updates = 0
     for event in event_log:
         event_type = event.get("event_type")
         if isinstance(event_type, str) and event_type:
@@ -81,6 +89,29 @@ def _compute_event_metrics(
             choices = payload.get("choices")
             if isinstance(choices, list):
                 decision_choice_count += len(choices)
+        if event_type == "trade_offer_created":
+            trade_offers_created += 1
+        if event_type == "trade_offer_responded" and isinstance(payload, dict):
+            trade_offers_responded += 1
+            if payload.get("response_type") == "accept":
+                trade_accept_count += 1
+        if event_type == "trade_offer_cancelled":
+            trade_offers_cancelled += 1
+        if event_type == "order_fulfilled" and isinstance(payload, dict):
+            fulfilled_count = payload.get("fulfilled_count")
+            if isinstance(fulfilled_count, (int, float)):
+                orders_fulfilled_count += int(fulfilled_count)
+        if event_type == "investment_made" and isinstance(payload, dict):
+            investments_count += 1
+            invest_price = payload.get("invest_price")
+            if isinstance(invest_price, (int, float)):
+                investment_amount_total += float(invest_price)
+        if event_type == "map_progress_updated":
+            map_progress_updates += 1
+            actor_id = event.get("actor_id")
+            if isinstance(actor_id, str) and actor_id:
+                agent = per_agent.setdefault(actor_id, {})
+                agent["map_progress_updates"] = agent.get("map_progress_updates", 0.0) + 1.0
     for event_type, count in sorted(event_counts.items()):
         per_run[f"event_count_{event_type}"] = float(count)
     for action_type, count in sorted(action_counts.items()):
@@ -97,6 +128,20 @@ def _compute_event_metrics(
         per_run["proposal_response_rate"] = float(proposal_responded) / float(proposal_created)
     if decision_choice_count > 0:
         per_run["decision_choice_count"] = float(decision_choice_count)
+    if trade_offers_created > 0:
+        per_run["trade_offers_created"] = float(trade_offers_created)
+        per_run["trade_offers_responded"] = float(trade_offers_responded)
+        per_run["trade_offers_cancelled"] = float(trade_offers_cancelled)
+        per_run["trade_offer_response_rate"] = float(trade_offers_responded) / float(trade_offers_created)
+        per_run["trade_accept_rate"] = float(trade_accept_count) / float(trade_offers_created)
+    if orders_fulfilled_count > 0:
+        per_run["orders_fulfilled_count"] = float(orders_fulfilled_count)
+    if investments_count > 0:
+        per_run["investments_count"] = float(investments_count)
+        per_run["investment_amount_total"] = float(investment_amount_total)
+        per_run["investment_amount_mean"] = float(investment_amount_total) / float(investments_count)
+    if map_progress_updates > 0:
+        per_run["map_progress_updates"] = float(map_progress_updates)
     return per_run, per_agent
 
 
@@ -221,6 +266,54 @@ def compute_metrics(
             per_run["target_steps"] = float(target_steps)
             if isinstance(steps_taken, int) and steps_taken > 0:
                 per_run["efficiency"] = float(target_steps) / float(steps_taken)
+        if isinstance(complete, bool):
+            per_run["completed"] = 1.0 if complete else 0.0
+    if task_outcome is not None and task_outcome.get("task_type") == "shapefactory":
+        steps_taken = task_outcome.get("steps_taken")
+        target_steps = task_outcome.get("target_steps")
+        completed_trades = task_outcome.get("completed_trades")
+        pending_offers = task_outcome.get("pending_offers")
+        complete = task_outcome.get("complete")
+        if isinstance(steps_taken, int):
+            per_run["steps_taken"] = float(steps_taken)
+        if isinstance(target_steps, int) and target_steps > 0:
+            per_run["target_steps"] = float(target_steps)
+            if isinstance(steps_taken, int) and steps_taken > 0:
+                per_run["efficiency"] = float(target_steps) / float(steps_taken)
+        if isinstance(completed_trades, int):
+            per_run["completed_trades"] = float(completed_trades)
+        if isinstance(pending_offers, int):
+            per_run["pending_offers"] = float(pending_offers)
+        if isinstance(complete, bool):
+            per_run["completed"] = 1.0 if complete else 0.0
+    if task_outcome is not None and task_outcome.get("task_type") == "daytrader":
+        steps_taken = task_outcome.get("steps_taken")
+        target_steps = task_outcome.get("target_steps")
+        investments_count = task_outcome.get("investments_count")
+        complete = task_outcome.get("complete")
+        if isinstance(steps_taken, int):
+            per_run["steps_taken"] = float(steps_taken)
+        if isinstance(target_steps, int) and target_steps > 0:
+            per_run["target_steps"] = float(target_steps)
+            if isinstance(steps_taken, int) and steps_taken > 0:
+                per_run["efficiency"] = float(target_steps) / float(steps_taken)
+        if isinstance(investments_count, int):
+            per_run["task_investments_count"] = float(investments_count)
+        if isinstance(complete, bool):
+            per_run["completed"] = 1.0 if complete else 0.0
+    if task_outcome is not None and task_outcome.get("task_type") == "maptask":
+        steps_taken = task_outcome.get("steps_taken")
+        target_steps = task_outcome.get("target_steps")
+        map_progress_updates = task_outcome.get("map_progress_updates")
+        complete = task_outcome.get("complete")
+        if isinstance(steps_taken, int):
+            per_run["steps_taken"] = float(steps_taken)
+        if isinstance(target_steps, int) and target_steps > 0:
+            per_run["target_steps"] = float(target_steps)
+            if isinstance(steps_taken, int) and steps_taken > 0:
+                per_run["efficiency"] = float(target_steps) / float(steps_taken)
+        if isinstance(map_progress_updates, int):
+            per_run["task_map_progress_updates"] = float(map_progress_updates)
         if isinstance(complete, bool):
             per_run["completed"] = 1.0 if complete else 0.0
     event_per_run, event_per_agent = _compute_event_metrics(event_log)

@@ -4,6 +4,10 @@
 - Validate config only: `python -m src.cli path/to/config.yml --validate-only`
 - Probe templates: `python -m src.cli path/to/config.yml --probe-templates configs/probe_templates.yml` (defaults to `configs/probe_templates.yml`)
 - Accumulator example: `python -m src.cli configs/accumulator_example.yml --run-id accumulator_v1 --output-dir experiments/accumulator_v1`
+- ShapeFactory example: `python -m src.cli configs/shapefactory_example.yml --run-id shapefactory_v1 --output-dir experiments/shapefactory_v1`
+- DayTrader example: `python -m src.cli configs/daytrader_example.yml --run-id daytrader_v1 --output-dir experiments/daytrader_v1`
+- MapTask example: `python -m src.cli configs/maptask_example.yml --run-id maptask_v1 --output-dir experiments/maptask_v1`
+- MapTask print actions example: `python -m src.cli configs/maptask_example.yml --run-id maptask_v1 --output-dir experiments/maptask_v1 --print-actions`
 - Config schema: versioning is tracked via `trace_schema_version`
 - Validate-only note: `--validate-only` skips controller execution and log writing
 - Run with logs: `python -m src.cli path/to/config.yml --run-id r1 --output-dir experiments/r1`

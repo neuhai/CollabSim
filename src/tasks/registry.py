@@ -13,6 +13,13 @@ class TaskDefinition:
     name: str
     init_state: Callable[[dict[str, Any]], dict[str, Any]]
     step: Callable[[dict[str, Any]], dict[str, Any]]
+    apply_action: (
+        Callable[
+            [dict[str, Any], str, dict[str, Any], Callable[..., dict[str, Any]]],
+            bool,
+        ]
+        | None
+    ) = None
 
 
 class TaskRegistry:
@@ -42,11 +49,17 @@ def build_default_registry() -> TaskRegistry:
 
     from src.tasks.accumulator import ACCUMULATOR_TASK
     from src.tasks.counter import COUNTER_TASK
+    from src.tasks.daytrader import DAYTRADER_TASK
     from src.tasks.defaults import NOOP_TASK
     from src.tasks.hidden_profile import HIDDEN_PROFILE_TASK
+    from src.tasks.maptask import MAPTASK_TASK
+    from src.tasks.shapefactory import SHAPEFACTORY_TASK
 
     registry = TaskRegistry()
     register_task(registry, NOOP_TASK)
     register_task(registry, COUNTER_TASK)
     register_task(registry, ACCUMULATOR_TASK)
-    return register_task(registry, HIDDEN_PROFILE_TASK)
+    register_task(registry, HIDDEN_PROFILE_TASK)
+    register_task(registry, SHAPEFACTORY_TASK)
+    register_task(registry, DAYTRADER_TASK)
+    return register_task(registry, MAPTASK_TASK)

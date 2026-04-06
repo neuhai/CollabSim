@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import copy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+import heapq
 import hashlib
 import json
+import random
 from typing import Any, Callable
 
 from src.agents.interface import ActionProposal, Observation
@@ -51,10 +54,13 @@ class ExperimentState:
     visibility_overrides_by_agent: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     probe_event_index: int = 0
     probe_index: int = 0
+    probe_action_counts_by_agent: dict[str, int] = field(default_factory=dict)
     agent_status: dict[str, str] = field(default_factory=dict)
     pending_context_updates: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_context_hash: dict[str, str] = field(default_factory=dict)
     context_memory: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    sim_time_ms: int = 0
+    inboxes: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 def build_state_snapshot(state: ExperimentState) -> dict[str, Any]:
@@ -109,6 +115,7 @@ class ExperimentController:
         self.config = config
         self.run_id = run_id
         self.probe_registry = probe_registry
+        self.task_definition: Any | None = None
         self.probe_template_ids = []
         if isinstance(config, dict):
             probe_cfg = config.get("probe", {})
@@ -136,6 +143,7 @@ class ExperimentController:
             if task_type is None:
                 raise ValueError("config.task.type is required for task_registry.")
             task_def = task_registry.get(task_type)
+            self.task_definition = task_def
             self.state.task_state = task_def.init_state(config)
             self.task_hook = lambda state: task_def.step(state.task_state)
         elif task_registry is not None and config is None:
@@ -145,6 +153,7 @@ class ExperimentController:
             registry.register(NOOP_TASK)
             task_type = config.get("task", {}).get("type", "noop")
             task_def = registry.get(task_type)
+            self.task_definition = task_def
             self.state.task_state = task_def.init_state(config)
             self.task_hook = lambda state: task_def.step(state.task_state)
         else:
@@ -152,9 +161,22 @@ class ExperimentController:
         self._last_flushed_index = 0
         self._event_counter = 0
         self._message_counter = 0
+        self._scheduled_counter = 0
+        self._scheduled_events: list[tuple[int, int, str, dict[str, Any]]] = []
+        self._turn_rng = random.Random(self._turn_order_seed())
+        self.event_listener: Callable[[dict[str, Any]], None] | None = None
+        self.runtime_listener: Callable[[str, dict[str, Any]], None] | None = None
 
     def run(self, max_steps: int | None = None) -> ExperimentState:
         """Run the controller loop up to max_steps or until task complete."""
+
+        if self._step_mode() == "time":
+            self._reset_agents()
+            self._run_time_mode(max_steps=max_steps)
+            self._export_metrics()
+            self._flush_logs()
+            self._write_manifest()
+            return self.state
 
         resolved_max_steps = self._resolve_max_steps(max_steps)
         self._reset_agents()
@@ -202,6 +224,317 @@ class ExperimentController:
             return mode
         return "event"
 
+    def _run_time_mode(self, max_steps: int | None = None) -> None:
+        duration_ms = self._duration_ms()
+        if duration_ms <= 0:
+            raise ValueError("experiment.duration_sec or experiment.duration_ms must be a positive number for time mode.")
+        self._scheduled_events.clear()
+        self._scheduled_counter = 0
+        self.state.sim_time_ms = 0
+        self.state.observation_cache.clear()
+        for agent_id in self.state.agents.keys():
+            self.state.inboxes.setdefault(agent_id, [])
+            self._set_agent_status(agent_id, "idle")
+            self._enqueue_event(0, "agent_wakeup", {"agent_id": agent_id, "reason": "start"})
+
+        heartbeat_interval = self._proactive_wakeup_interval_ms()
+        if heartbeat_interval > 0:
+            self._enqueue_event(heartbeat_interval, "heartbeat", {"interval_ms": heartbeat_interval})
+
+        while self._scheduled_events:
+            when, _, kind, payload = heapq.heappop(self._scheduled_events)
+            if when > duration_ms:
+                break
+            self.state.sim_time_ms = when
+            if isinstance(max_steps, int) and max_steps > 0 and self.state.step_index >= max_steps:
+                break
+            if self._termination_condition() == "task_complete" and self.state.task_state.get("complete") is True:
+                break
+            if kind == "agent_wakeup":
+                self._handle_agent_wakeup(payload)
+            elif kind == "agent_decide":
+                decide_payloads = [payload]
+                while self._scheduled_events:
+                    next_when, _, next_kind, next_payload = self._scheduled_events[0]
+                    if next_when != when or next_kind != "agent_decide":
+                        break
+                    heapq.heappop(self._scheduled_events)
+                    decide_payloads.append(next_payload)
+                self._handle_agent_decide_batch(decide_payloads)
+            elif kind == "action_complete":
+                self._handle_action_complete(payload)
+            elif kind == "heartbeat":
+                self._handle_heartbeat(payload)
+            self._flush_logs()
+
+    def _max_concurrent_requests(self) -> int:
+        if not isinstance(self.config, dict):
+            return max(1, len(self.state.agents))
+        protocol = self.config.get("protocol", {})
+        if not isinstance(protocol, dict):
+            return max(1, len(self.state.agents))
+        value = protocol.get("max_concurrent_requests")
+        if isinstance(value, int) and value > 0:
+            return value
+        # Backward compatibility for older configs.
+        value = protocol.get("max_concurrent_thinking")
+        if isinstance(value, int) and value > 0:
+            return value
+        return max(1, len(self.state.agents))
+
+    def _enqueue_event(self, when_ms: int, kind: str, payload: dict[str, Any]) -> None:
+        self._scheduled_counter += 1
+        heapq.heappush(self._scheduled_events, (when_ms, self._scheduled_counter, kind, payload))
+
+    def _duration_ms(self) -> int:
+        if not isinstance(self.config, dict):
+            return 0
+        experiment = self.config.get("experiment", {})
+        if not isinstance(experiment, dict):
+            return 0
+        duration_ms = experiment.get("duration_ms")
+        if isinstance(duration_ms, (int, float)) and duration_ms > 0:
+            return int(duration_ms)
+        duration_sec = experiment.get("duration_sec")
+        if isinstance(duration_sec, (int, float)) and duration_sec > 0:
+            return int(duration_sec * 1000)
+        return 0
+
+    def _proactive_wakeup_interval_ms(self) -> int:
+        if not isinstance(self.config, dict):
+            return 15000
+        protocol = self.config.get("protocol", {})
+        if not isinstance(protocol, dict):
+            return 15000
+        interval = protocol.get("proactive_wakeup_interval_ms")
+        if isinstance(interval, int) and interval > 0:
+            return interval
+        return 15000
+
+    def _action_duration_ms(self, action: dict[str, Any]) -> int:
+        action_type = action.get("type")
+        if not isinstance(action_type, str):
+            return 0
+        if isinstance(self.config, dict):
+            protocol = self.config.get("protocol", {})
+            if isinstance(protocol, dict):
+                durations = protocol.get("action_durations_ms")
+                if isinstance(durations, dict):
+                    value = durations.get(action_type)
+                    if isinstance(value, int) and value >= 0:
+                        return value
+        if action_type == "produce_shape" and isinstance(self.config, dict):
+            task_cfg = self.config.get("task", {})
+            if isinstance(task_cfg, dict):
+                production_time = task_cfg.get("production_time")
+                if isinstance(production_time, (int, float)) and production_time >= 0:
+                    return int(production_time * 1000)
+        defaults = {
+            "communicate": 120,
+            "produce_shape": 2000,
+            "propose_trade_offer": 200,
+            "trade_response": 150,
+            "fulfill_order": 600,
+            "do_nothing": 0,
+        }
+        return defaults.get(action_type, 0)
+
+    def _handle_agent_wakeup(self, payload: dict[str, Any]) -> None:
+        agent_id = payload.get("agent_id")
+        if not isinstance(agent_id, str) or agent_id not in self.state.agents:
+            return
+        if not self._is_agent_idle(agent_id):
+            return
+        # No synthetic pre-thinking delay: wakeup triggers request immediately.
+        self._set_agent_status(agent_id, "busy")
+        self._enqueue_event(self.state.sim_time_ms, "agent_decide", {"agent_id": agent_id})
+
+    def _handle_agent_decide(self, payload: dict[str, Any]) -> None:
+        agent_id = payload.get("agent_id")
+        if not isinstance(agent_id, str) or agent_id not in self.state.agents:
+            return
+        if self.state.agent_status.get(agent_id) != "busy":
+            return
+        action = self._context_update_agent_time(agent_id)
+        if action is None:
+            self._set_agent_status(agent_id, "idle")
+            return
+        duration_ms = self._action_duration_ms(action)
+        if duration_ms <= 0:
+            self._handle_action_complete({"agent_id": agent_id, "action": action})
+            return
+        self._set_agent_status(agent_id, "executing")
+        self._enqueue_event(
+            self.state.sim_time_ms + duration_ms,
+            "action_complete",
+            {"agent_id": agent_id, "action": action},
+        )
+
+    def _handle_agent_decide_batch(self, payloads: list[dict[str, Any]]) -> None:
+        requested_ids: list[str] = []
+        for payload in payloads:
+            agent_id = payload.get("agent_id")
+            if not isinstance(agent_id, str) or agent_id not in self.state.agents:
+                continue
+            if self.state.agent_status.get(agent_id) != "busy":
+                continue
+            requested_ids.append(agent_id)
+        if not requested_ids:
+            return
+
+        # Build observations in controller thread for consistent visibility filtering and cached snapshots.
+        observation_map: dict[str, Observation] = {}
+        for agent_id in requested_ids:
+            agent = self.state.agents.get(agent_id)
+            if agent is None:
+                continue
+            self._apply_visibility_map_from_config(agent_id)
+            self._load_agent_memory(agent_id, agent)
+            observation_map[agent_id] = self._get_cached_observation(agent_id)
+
+        proposals: dict[str, Any] = {}
+        max_workers = min(self._max_concurrent_requests(), len(observation_map))
+        if max_workers <= 1:
+            for agent_id, observation in observation_map.items():
+                proposals[agent_id] = self._invoke_agent_context_update(agent_id, observation)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self._invoke_agent_context_update, agent_id, observation): agent_id
+                    for agent_id, observation in observation_map.items()
+                }
+                for future in as_completed(futures):
+                    agent_id = futures[future]
+                    try:
+                        proposals[agent_id] = future.result()
+                    except Exception:
+                        proposals[agent_id] = None
+
+        # Commit in deterministic order.
+        for agent_id in sorted(requested_ids):
+            observation = observation_map.get(agent_id)
+            if observation is None:
+                self._set_agent_status(agent_id, "idle")
+                continue
+            proposal = proposals.get(agent_id)
+            action = self._finalize_time_proposal(agent_id, observation, proposal)
+            if action is None:
+                self._set_agent_status(agent_id, "idle")
+                continue
+            duration_ms = self._action_duration_ms(action)
+            if duration_ms <= 0:
+                self._handle_action_complete({"agent_id": agent_id, "action": action})
+                continue
+            self._set_agent_status(agent_id, "executing")
+            self._enqueue_event(
+                self.state.sim_time_ms + duration_ms,
+                "action_complete",
+                {"agent_id": agent_id, "action": action},
+            )
+
+    def _invoke_agent_context_update(self, agent_id: str, observation: Observation) -> Any:
+        agent = self.state.agents.get(agent_id)
+        if agent is None or not hasattr(agent, "context_update"):
+            return None
+        self._notify_runtime(
+            "context_update_start",
+            {
+                "agent_id": agent_id,
+                "step_index": self.state.step_index,
+                "sim_time_ms": self.state.sim_time_ms,
+            },
+        )
+        proposal = agent.context_update(observation)
+        self._notify_runtime(
+            "context_update_end",
+            {
+                "agent_id": agent_id,
+                "step_index": self.state.step_index,
+                "sim_time_ms": self.state.sim_time_ms,
+            },
+        )
+        return proposal
+
+    def _finalize_time_proposal(self, agent_id: str, observation: Observation, proposal: Any) -> dict[str, Any] | None:
+        agent = self.state.agents.get(agent_id)
+        if agent is None:
+            return None
+        self._capture_agent_memory(agent_id, agent)
+        # Inbox items are consumed when the agent gets a decision chance.
+        self.state.inboxes[agent_id] = []
+        if isinstance(proposal, ActionProposal):
+            action = proposal.action
+            if self._log_observation_events():
+                self._emit_event(
+                    event_type="context_update",
+                    actor_id=agent_id,
+                    visibility="system",
+                    payload={
+                        "agent_id": agent_id,
+                        "step_index": self.state.step_index,
+                        "action": proposal.action,
+                        "rationale": proposal.rationale,
+                        "alternatives": proposal.alternatives,
+                    },
+                )
+        elif isinstance(proposal, dict):
+            action = proposal.get("action")
+        else:
+            action = None
+        if not isinstance(action, dict):
+            return None
+        if "actor_id" not in action:
+            action = {**action, "actor_id": agent_id}
+        if "timestamp" not in action:
+            action = {**action, "timestamp": self.state.step_index}
+        self._record_context_memory(agent_id, observation)
+        return self._process_submitted_action(action, apply_immediately=False)
+
+    def _handle_action_complete(self, payload: dict[str, Any]) -> None:
+        agent_id = payload.get("agent_id")
+        action = payload.get("action")
+        if not isinstance(agent_id, str) or not isinstance(action, dict):
+            return
+        self._notify_runtime(
+            "step_start",
+            {
+                "step_index": self.state.step_index + 1,
+                "sim_time_ms": self.state.sim_time_ms,
+            },
+        )
+        self._apply_action(action, agent_id)
+        self.state.step_index += 1
+        self.state.observation_cache.clear()
+        if self.task_hook is not None:
+            self.task_hook(self.state)
+        state_hash = compute_state_hash(self.state)
+        self._emit_event(
+            event_type="state_updated",
+            actor_id="system",
+            visibility="system",
+            payload={
+                "step_index": self.state.step_index,
+                "sim_time_ms": self.state.sim_time_ms,
+                "state_delta": {"step_index": self.state.step_index},
+                "resulting_state_hash": state_hash,
+            },
+            event_id=f"step_{self.state.step_index}",
+        )
+        self._maybe_log_probe(had_action=True, actor_id=agent_id)
+        self._set_agent_status(agent_id, "idle")
+        inbox = self.state.inboxes.get(agent_id, [])
+        if isinstance(inbox, list) and inbox:
+            self._enqueue_event(self.state.sim_time_ms, "agent_wakeup", {"agent_id": agent_id, "reason": "inbox"})
+
+    def _handle_heartbeat(self, payload: dict[str, Any]) -> None:
+        interval = payload.get("interval_ms")
+        if not isinstance(interval, int) or interval <= 0:
+            interval = self._proactive_wakeup_interval_ms()
+        for agent_id in self.state.agents.keys():
+            if self._is_agent_idle(agent_id):
+                self._enqueue_event(self.state.sim_time_ms, "agent_wakeup", {"agent_id": agent_id, "reason": "heartbeat"})
+        self._enqueue_event(self.state.sim_time_ms + interval, "heartbeat", {"interval_ms": interval})
+
     def _resolve_max_steps(self, max_steps: int | None) -> int:
         if max_steps is not None:
             return max_steps
@@ -230,6 +563,12 @@ class ExperimentController:
     def step(self) -> None:
         """Execute a single controller step (placeholder)."""
 
+        self._notify_runtime(
+            "step_start",
+            {
+                "step_index": self.state.step_index + 1,
+            },
+        )
         self.state.step_index += 1
         self._apply_proposal_expiry()
         self._apply_decision_timeouts()
@@ -356,51 +695,113 @@ class ExperimentController:
         pending = list(self.state.pending_actions)
         self.state.pending_actions.clear()
         for action in pending:
-            actor_id = self._extract_actor_id(action)
-            self._emit_event(
-                event_type="action_submitted",
-                actor_id=actor_id,
-                visibility="system",
-                payload={"action": action},
-            )
-            if not self._is_action_enabled(action):
-                self._emit_event(
-                    event_type="action_rejected",
-                    actor_id=actor_id,
-                    visibility="system",
-                    payload={"action": action, "error_message": "Action type not enabled by config."},
-                )
-                continue
-            action = self._apply_action_defaults(action)
-            try:
-                validate_action(action)
-            except ActionValidationError as exc:
-                self._emit_event(
-                    event_type="action_rejected",
-                    actor_id=actor_id,
-                    visibility="system",
-                    payload={"action": action, "error_message": str(exc)},
-                )
-                continue
-            precondition_error = self._check_action_preconditions(action, actor_id)
-            if precondition_error is not None:
-                self._emit_event(
-                    event_type="action_rejected",
-                    actor_id=actor_id,
-                    visibility="system",
-                    payload={"action": action, "error_message": precondition_error},
-                )
-                continue
-            self._emit_event(
-                event_type="action_validated",
-                actor_id=actor_id,
-                visibility="system",
-                payload={"action": action, "checks_passed": ["schema"]},
-            )
-            self._apply_action(action, actor_id)
+            self._process_submitted_action(action, apply_immediately=True)
         return True
 
-    def _maybe_log_probe(self, had_action: bool) -> None:
+    def _process_submitted_action(self, action: dict[str, Any], apply_immediately: bool) -> dict[str, Any] | None:
+        actor_id = self._extract_actor_id(action)
+        self._emit_event(
+            event_type="action_submitted",
+            actor_id=actor_id,
+            visibility="system",
+            payload={"action": action},
+        )
+        if not self._is_action_enabled(action):
+            self._emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={"action": action, "error_message": "Action type not enabled by config."},
+            )
+            return None
+        action = self._apply_action_defaults(action)
+        try:
+            validate_action(action)
+        except ActionValidationError as exc:
+            self._emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={"action": action, "error_message": str(exc)},
+            )
+            return None
+        precondition_error = self._check_action_preconditions(action, actor_id)
+        if precondition_error is not None:
+            self._emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={"action": action, "error_message": precondition_error},
+            )
+            return None
+        self._emit_event(
+            event_type="action_validated",
+            actor_id=actor_id,
+            visibility="system",
+            payload={"action": action, "checks_passed": ["schema"]},
+        )
+        if apply_immediately:
+            self._apply_action(action, actor_id)
+        return action
+
+    def _context_update_agent_time(self, agent_id: str) -> dict[str, Any] | None:
+        if not isinstance(self.state.agents, dict) or not self.state.agents:
+            return None
+        agent = self.state.agents.get(agent_id)
+        if agent is None:
+            return None
+        if not hasattr(agent, "context_update"):
+            return None
+        self._apply_visibility_map_from_config(agent_id)
+        self._load_agent_memory(agent_id, agent)
+        observation = self._get_cached_observation(agent_id)
+        self._notify_runtime(
+            "context_update_start",
+            {
+                "agent_id": agent_id,
+                "step_index": self.state.step_index,
+            },
+        )
+        proposal = agent.context_update(observation)
+        self._notify_runtime(
+            "context_update_end",
+            {
+                "agent_id": agent_id,
+                "step_index": self.state.step_index,
+            },
+        )
+        self._capture_agent_memory(agent_id, agent)
+        # Inbox items are consumed when the agent gets a decision chance.
+        self.state.inboxes[agent_id] = []
+        if isinstance(proposal, ActionProposal):
+            action = proposal.action
+            if self._log_observation_events():
+                self._emit_event(
+                    event_type="context_update",
+                    actor_id=agent_id,
+                    visibility="system",
+                    payload={
+                        "agent_id": agent_id,
+                        "step_index": self.state.step_index,
+                        "action": proposal.action,
+                        "rationale": proposal.rationale,
+                        "alternatives": proposal.alternatives,
+                    },
+                )
+        elif isinstance(proposal, dict):
+            action = proposal.get("action")
+        else:
+            action = None
+        if not isinstance(action, dict):
+            return None
+        if "actor_id" not in action:
+            action = {**action, "actor_id": agent_id}
+        if "timestamp" not in action:
+            action = {**action, "timestamp": self.state.step_index}
+        self._record_context_memory(agent_id, observation)
+        return self._process_submitted_action(action, apply_immediately=False)
+
+    def _maybe_log_probe(self, had_action: bool, actor_id: str | None = None) -> None:
         cadence = self._probe_cadence()
         if cadence is None:
             return
@@ -408,17 +809,97 @@ class ExperimentController:
         self.state.probe_event_index = len(self.state.event_log)
         if cadence == "per_turn":
             records = self._log_probe_placeholder()
-            self._collect_probe_responses(records)
+            self._notify_probe_start(cadence, records)
+            stats = self._collect_probe_responses(records)
+            self._notify_probe_end(cadence, records, stats)
             return
         if cadence == "per_action" and had_action:
             records = self._log_probe_placeholder()
-            self._collect_probe_responses(records)
+            self._notify_probe_start(cadence, records)
+            stats = self._collect_probe_responses(records)
+            self._notify_probe_end(cadence, records, stats)
+            return
+        if cadence == "per_agent_n_actions":
+            if not had_action:
+                return
+            if not isinstance(actor_id, str) or not actor_id:
+                return
+            every_n = self._probe_every_n_actions()
+            if every_n <= 0:
+                return
+            action_count = self.state.probe_action_counts_by_agent.get(actor_id, 0) + 1
+            self.state.probe_action_counts_by_agent[actor_id] = action_count
+            if action_count % every_n != 0:
+                return
+            records = self._log_probe_placeholder()
+            self._notify_probe_start(cadence, records)
+            stats = self._collect_probe_responses(records)
+            self._notify_probe_end(cadence, records, stats)
             return
         if cadence == "on_event":
             events = self._probe_event_types()
             if events and any(event.get("event_type") in events for event in new_events):
                 records = self._log_probe_placeholder()
-                self._collect_probe_responses(records)
+                self._notify_probe_start(cadence, records)
+                stats = self._collect_probe_responses(records)
+                self._notify_probe_end(cadence, records, stats)
+
+    def _probe_every_n_actions(self) -> int:
+        if not isinstance(self.config, dict):
+            return 1
+        probe_cfg = self.config.get("probe", {})
+        if not isinstance(probe_cfg, dict):
+            return 1
+        value = probe_cfg.get("every_n_actions")
+        if isinstance(value, int) and value > 0:
+            return value
+        return 1
+
+    def _notify_probe_start(self, cadence: str, records: list[dict[str, Any]]) -> None:
+        self._notify_runtime(
+            "probe_start",
+            {
+                "step_index": self.state.step_index,
+                "sim_time_ms": self.state.sim_time_ms,
+                "cadence": cadence,
+                "record_count": len(records),
+                "request_count": self._estimate_probe_requests(records),
+            },
+        )
+
+    def _notify_probe_end(self, cadence: str, records: list[dict[str, Any]], stats: dict[str, int]) -> None:
+        self._notify_runtime(
+            "probe_end",
+            {
+                "step_index": self.state.step_index,
+                "sim_time_ms": self.state.sim_time_ms,
+                "cadence": cadence,
+                "record_count": len(records),
+                "request_count": stats.get("total", 0),
+                "processed_count": stats.get("processed", 0),
+                "success_count": stats.get("success", 0),
+                "error_count": stats.get("error", 0),
+            },
+        )
+
+    def _estimate_probe_requests(self, records: list[dict[str, Any]]) -> int:
+        if not records:
+            return 0
+        if not isinstance(self.state.agents, dict) or not self.state.agents:
+            return 0
+        responders = [
+            agent_id
+            for agent_id, agent in self.state.agents.items()
+            if isinstance(agent_id, str) and hasattr(agent, "respond_probe")
+        ]
+        total = 0
+        for record in records:
+            about_agent_id = record.get("about_agent_id")
+            if isinstance(about_agent_id, str) and about_agent_id:
+                total += sum(1 for agent_id in responders if agent_id != about_agent_id)
+            else:
+                total += len(responders)
+        return total
 
     def _log_probe_placeholder(self) -> list[dict[str, Any]]:
         template_id, construct, prompt = self._next_probe_template()
@@ -466,11 +947,12 @@ class ExperimentController:
             return set()
         return {event for event in events if isinstance(event, str) and event}
 
-    def _collect_probe_responses(self, records: list[dict[str, Any]]) -> None:
+    def _collect_probe_responses(self, records: list[dict[str, Any]]) -> dict[str, int]:
+        stats = {"total": self._estimate_probe_requests(records), "processed": 0, "success": 0, "error": 0}
         if not records:
-            return
+            return stats
         if not isinstance(self.state.agents, dict) or not self.state.agents:
-            return
+            return stats
         for record in records:
             probe_id = record.get("probe_id")
             template_id = record.get("template_id")
@@ -489,12 +971,16 @@ class ExperimentController:
                 if not hasattr(agent, "respond_probe"):
                     continue
                 observation = self._get_cached_observation(agent_id)
+                stats["processed"] += 1
                 try:
                     response = agent.respond_probe(probe_id, prompt, construct, observation)
                 except Exception:
+                    stats["error"] += 1
+                    self._notify_probe_progress(stats)
                     continue
                 if isinstance(response, ProbeResponse):
                     self.log_probe_response(template_id, response, actor_id=agent_id, prompt=prompt)
+                    stats["success"] += 1
                 elif isinstance(response, dict):
                     answer = response.get("answer")
                     confidence = response.get("confidence")
@@ -510,6 +996,30 @@ class ExperimentController:
                         actor_id=agent_id,
                         prompt=prompt,
                     )
+                    stats["success"] += 1
+                else:
+                    stats["error"] += 1
+                self._notify_probe_progress(stats)
+        return stats
+
+    def _notify_probe_progress(self, stats: dict[str, int]) -> None:
+        processed = stats.get("processed", 0)
+        total = stats.get("total", 0)
+        if total <= 0:
+            return
+        if processed % 5 != 0 and processed != total:
+            return
+        self._notify_runtime(
+            "probe_progress",
+            {
+                "step_index": self.state.step_index,
+                "sim_time_ms": self.state.sim_time_ms,
+                "processed_count": processed,
+                "request_count": total,
+                "success_count": stats.get("success", 0),
+                "error_count": stats.get("error", 0),
+            },
+        )
 
     def _probe_questions(self, fallback_prompt: str | None) -> list[str]:
         if not isinstance(self.config, dict):
@@ -565,7 +1075,21 @@ class ExperimentController:
         self._load_agent_memory(agent_id, agent)
         observation = self._get_cached_observation(agent_id)
         self._set_agent_status(agent_id, "busy")
+        self._notify_runtime(
+            "context_update_start",
+            {
+                "agent_id": agent_id,
+                "step_index": self.state.step_index,
+            },
+        )
         proposal = agent.context_update(observation)
+        self._notify_runtime(
+            "context_update_end",
+            {
+                "agent_id": agent_id,
+                "step_index": self.state.step_index,
+            },
+        )
         self._set_agent_status(agent_id, "idle")
         self._capture_agent_memory(agent_id, agent)
         if isinstance(proposal, ActionProposal):
@@ -664,7 +1188,7 @@ class ExperimentController:
 
     def _is_agent_idle(self, agent_id: str) -> bool:
         status = self.state.agent_status.get(agent_id, "idle")
-        return status != "busy"
+        return status == "idle"
 
     def _set_agent_status(self, agent_id: str, status: str) -> None:
         self.state.agent_status[agent_id] = status
@@ -684,12 +1208,33 @@ class ExperimentController:
         if not isinstance(self.state.agents, dict):
             return []
         order = self.state.turn_state.get("order")
-        if isinstance(order, list) and all(isinstance(item, str) for item in order):
+        if (
+            self._turn_taking() == "sequential"
+            and isinstance(order, list)
+            and all(isinstance(item, str) for item in order)
+        ):
             if set(order) == set(self.state.agents.keys()):
                 return order
         resolved = sorted(self.state.agents.keys())
+        if self._turn_taking() != "sequential":
+            # Simultaneous mode should not enforce a fixed ABC... order.
+            # Shuffle each scheduling cycle while staying reproducible via seed.
+            self._turn_rng.shuffle(resolved)
+            self.state.turn_state["last_order"] = resolved
+            return resolved
         self.state.turn_state["order"] = resolved
         return resolved
+
+    def _turn_order_seed(self) -> int:
+        if not isinstance(self.config, dict):
+            return 0
+        experiment = self.config.get("experiment", {})
+        if not isinstance(experiment, dict):
+            return 0
+        seed = experiment.get("seed")
+        if isinstance(seed, int):
+            return seed
+        return 0
 
     def _apply_visibility_map_from_config(self, agent_id: str) -> None:
         if self.config is None:
@@ -1065,6 +1610,8 @@ class ExperimentController:
             self.state.agent_memory_limits[agent_id] = limit
 
     def _apply_action(self, action: dict[str, Any], actor_id: str) -> None:
+        if self._apply_task_action(action, actor_id):
+            return
         action_type = action.get("type")
         payload = action.get("payload", {})
         if action_type == "decide" and isinstance(payload, dict):
@@ -1079,6 +1626,19 @@ class ExperimentController:
             self._apply_transfer_action(actor_id, payload)
         if action_type == "do_nothing":
             return
+
+    def _apply_task_action(self, action: dict[str, Any], actor_id: str) -> bool:
+        task_def = self.task_definition
+        if task_def is None:
+            return False
+        apply_action = getattr(task_def, "apply_action", None)
+        if not callable(apply_action):
+            return False
+        try:
+            handled = apply_action(self.state, actor_id, action, self._emit_event)
+        except Exception:
+            return False
+        return handled is True
 
     def _apply_decision_action(self, actor_id: str, payload: dict[str, Any]) -> None:
         decision_id = payload.get("decision_id")
@@ -1165,7 +1725,7 @@ class ExperimentController:
 
     def _apply_communicate_action(self, actor_id: str, payload: dict[str, Any]) -> None:
         channel = payload.get("channel")
-        recipients = self._resolve_recipients(channel, payload)
+        recipients = self._resolve_recipients(channel, payload, actor_id)
         message_id = self._next_message_id()
         visibility = "private" if channel == "direct" else "public"
         self._emit_event(
@@ -1181,6 +1741,20 @@ class ExperimentController:
             },
         )
         self._increment_message_count(actor_id)
+        inbox_item = {
+            "message_id": message_id,
+            "from": actor_id,
+            "channel": channel,
+            "content": payload.get("content"),
+            "content_type": payload.get("content_type"),
+            "sim_time_ms": self.state.sim_time_ms,
+        }
+        for recipient in recipients:
+            if recipient == actor_id and channel == "direct":
+                continue
+            self.state.inboxes.setdefault(recipient, []).append(inbox_item)
+            if self._step_mode() == "time" and self._is_agent_idle(recipient):
+                self._enqueue_event(self.state.sim_time_ms, "agent_wakeup", {"agent_id": recipient, "reason": "message"})
 
     def _apply_propose_action(self, actor_id: str, payload: dict[str, Any]) -> None:
         proposal_id = payload.get("proposal_id")
@@ -1292,11 +1866,30 @@ class ExperimentController:
             return None
         return timeout
 
-    def _resolve_recipients(self, channel: Any, payload: dict[str, Any]) -> list[str]:
+    def _resolve_recipients(self, channel: Any, payload: dict[str, Any], actor_id: str) -> list[str]:
         if channel == "direct":
             raw = payload.get("recipients")
             if isinstance(raw, list):
                 return [item for item in raw if isinstance(item, str) and item]
+            return []
+        if channel == "broadcast":
+            # Broadcast can target multiple selected recipients, or all others when recipients omitted.
+            raw = payload.get("recipients")
+            if isinstance(raw, list) and raw:
+                seen: set[str] = set()
+                selected: list[str] = []
+                for item in raw:
+                    if not isinstance(item, str) or not item or item == actor_id or item in seen:
+                        continue
+                    seen.add(item)
+                    selected.append(item)
+                return selected
+            if isinstance(self.state.agents, dict):
+                return [
+                    agent_id
+                    for agent_id in self.state.agents.keys()
+                    if isinstance(agent_id, str) and agent_id and agent_id != actor_id
+                ]
             return []
         if isinstance(self.state.agents, dict):
             return [agent_id for agent_id in self.state.agents.keys() if isinstance(agent_id, str) and agent_id]
@@ -1378,13 +1971,33 @@ class ExperimentController:
             return None
         mode = self._communication_mode()
         channel = payload.get("channel")
-        if mode == "broadcast" and channel == "direct":
-            return "Direct messages not allowed in broadcast-only mode."
         if mode == "direct" and channel == "broadcast":
             return "Broadcast messages not allowed in direct-only mode."
-        limit = self._max_messages_per_turn()
-        if limit is not None and self._message_count(actor_id) >= limit:
-            return "Communication limit reached for this turn."
+        if channel == "direct":
+            recipients = payload.get("recipients")
+            if not isinstance(recipients, list) or not recipients:
+                return "Direct communication requires a non-empty recipients list."
+            if not all(isinstance(item, str) and item for item in recipients):
+                return "communicate.recipients must contain non-empty participant ids."
+            if actor_id in recipients:
+                return "You cannot send a direct message to yourself."
+            if len(set(recipients)) != len(recipients):
+                return "communicate.recipients must not contain duplicates."
+        if channel == "broadcast":
+            recipients = payload.get("recipients")
+            if recipients is not None:
+                if not isinstance(recipients, list) or not recipients:
+                    return "broadcast recipients must be a non-empty list when provided."
+                if not all(isinstance(item, str) and item for item in recipients):
+                    return "broadcast recipients must contain non-empty participant ids."
+                if actor_id in recipients:
+                    return "broadcast recipients must not include yourself."
+                if len(set(recipients)) != len(recipients):
+                    return "broadcast recipients must not contain duplicates."
+        if self._step_mode() != "time":
+            limit = self._max_messages_per_turn()
+            if limit is not None and self._message_count(actor_id) >= limit:
+                return "Communication limit reached for this turn."
         return None
 
     def _communication_mode(self) -> str | None:
@@ -1504,7 +2117,21 @@ class ExperimentController:
         except EventValidationError as exc:
             raise ValueError(f"Invalid event emitted: {exc}") from exc
         self.state.event_log.append(event)
+        listener = self.event_listener
+        if callable(listener):
+            try:
+                listener(event)
+            except Exception:
+                pass
         return event
+
+    def _notify_runtime(self, name: str, payload: dict[str, Any]) -> None:
+        listener = self.runtime_listener
+        if callable(listener):
+            try:
+                listener(name, payload)
+            except Exception:
+                pass
 
     def _next_event_id(self) -> str:
         self._event_counter += 1
@@ -1569,4 +2196,42 @@ class ExperimentController:
             for key in ("steps_taken", "target_steps"):
                 if key in self.state.task_state:
                     outcome[key] = self.state.task_state.get(key)
+        if task_type == "shapefactory":
+            for key in ("steps_taken", "target_steps"):
+                if key in self.state.task_state:
+                    outcome[key] = self.state.task_state.get(key)
+            pending_offers = self.state.task_state.get("pending_offers")
+            completed_trades = self.state.task_state.get("completed_trades")
+            if isinstance(pending_offers, list):
+                outcome["pending_offers"] = len(pending_offers)
+            if isinstance(completed_trades, list):
+                outcome["completed_trades"] = len(completed_trades)
+        if task_type == "daytrader":
+            for key in ("steps_taken", "target_steps"):
+                if key in self.state.task_state:
+                    outcome[key] = self.state.task_state.get(key)
+            participants = self.state.task_state.get("participants")
+            if isinstance(participants, dict):
+                investments_count = 0
+                for participant in participants.values():
+                    if not isinstance(participant, dict):
+                        continue
+                    history = participant.get("investment_history")
+                    if isinstance(history, list):
+                        investments_count += len(history)
+                outcome["investments_count"] = investments_count
+        if task_type == "maptask":
+            for key in ("steps_taken", "target_steps"):
+                if key in self.state.task_state:
+                    outcome[key] = self.state.task_state.get(key)
+            participants = self.state.task_state.get("participants")
+            if isinstance(participants, dict):
+                updates = 0
+                for participant in participants.values():
+                    if not isinstance(participant, dict):
+                        continue
+                    progress = participant.get("map_progress")
+                    if isinstance(progress, dict):
+                        updates += len(progress)
+                outcome["map_progress_updates"] = updates
         return outcome

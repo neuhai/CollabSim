@@ -1,0 +1,81 @@
+experiment:
+  id: "shapefactory_v1"
+  seed: 42
+  max_steps: 12
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_shapefactory_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format.md"
+  action: "prompts/action_prompt.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - id: "A"
+    role: "builder"
+    model:
+      provider: "azure"
+      name: "gpt-5.4"
+      temperature: 0.0
+  - id: "B"
+    role: "trader"
+    model:
+      provider: "azure"
+      name: "gpt-5.4"
+      temperature: 0.0
+
+action_space:
+  enabled:
+    [
+      "communicate",
+      "produce_shape",
+      "propose_trade_offer",
+      "trade_response",
+      "cancel_trade_offer",
+      "fulfill_order",
+      "do_nothing",
+    ]
+
+controls:
+  communication:
+    mode: "direct"
+    max_messages_per_turn: 2
+
+task:
+  type: "shapefactory"
+  target_steps: 10
+  starting_money: 200
+  regular_cost: 40
+  specialty_cost: 15
+  min_trade_price: 15
+  max_trade_price: 100
+  incentive_money: 60
+  production_time: 30
+  max_production_num: 3
+  shapes_order: 4
+  shapes_types: 3
+  shape_options: ["circle", "square", "triangle"]
+  specialties:
+    A: "circle"
+    B: "square"
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "event"
+  termination:
+    condition: "max_steps"
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_action"
+  templates: ["grounding_v1"]
+  questions_path: "prompts/interview_questions.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/shapefactory_v1"
+  observation_events: true

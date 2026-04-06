@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from src.data.logging import build_run_manifest, write_json
 from src.probe.loader import ProbeTemplateError, load_probe_templates
 from src.agents.factory import build_agents
 from src.tasks.registry import build_default_registry
+
+
+_LAST_SIM_TIME_MS: int | None = None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,6 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, default=None, help="Max steps to run")
     parser.add_argument("--validate-only", action="store_true", help="Validate config and exit")
     parser.add_argument("--dry-run", action="store_true", help="Run without writing logs")
+    parser.add_argument(
+        "--print-actions",
+        action="store_true",
+        help="Print per-agent action progress to stdout during run",
+    )
     parser.add_argument(
         "--manifest-path",
         default=None,
@@ -94,6 +103,12 @@ def main(argv: list[str] | None = None) -> int:
             task_registry=registry,
             probe_registry=probe_registry,
         )
+        controller.runtime_listener = _runtime_step_printer
+        if args.print_actions:
+            controller.runtime_listener = _runtime_progress_printer
+            controller.event_listener = _action_event_printer
+        if _is_time_mode(config):
+            print("[t=0ms] simulation started", flush=True)
         controller.run(max_steps=args.max_steps)
     except (KeyError, ValueError) as exc:
         print(f"Run failed: {exc}", file=sys.stderr)
@@ -109,6 +124,114 @@ def main(argv: list[str] | None = None) -> int:
 
     print("Config validation passed.")
     return 0
+
+
+def _runtime_step_printer(name: str, payload: dict[str, object]) -> None:
+    if name != "step_start":
+        return
+    _update_last_sim_time(payload)
+    print(f"[{_runtime_prefix(payload)}] starting", flush=True)
+
+
+def _runtime_progress_printer(name: str, payload: dict[str, object]) -> None:
+    _update_last_sim_time(payload)
+    if name == "step_start":
+        print(f"[{_runtime_prefix(payload)}] starting", flush=True)
+        return
+    if name == "probe_start":
+        prefix = _runtime_prefix(payload)
+        record_count = payload.get("record_count")
+        request_count = payload.get("request_count")
+        cadence = payload.get("cadence")
+        print(
+            f"[{prefix}] probe start cadence={cadence} records={record_count} requests={request_count}",
+            flush=True,
+        )
+        return
+    if name == "probe_progress":
+        prefix = _runtime_prefix(payload)
+        processed = payload.get("processed_count")
+        request_count = payload.get("request_count")
+        success = payload.get("success_count")
+        error = payload.get("error_count")
+        print(
+            f"[{prefix}] probe progress {processed}/{request_count} success={success} error={error}",
+            flush=True,
+        )
+        return
+    if name == "probe_end":
+        prefix = _runtime_prefix(payload)
+        processed = payload.get("processed_count")
+        request_count = payload.get("request_count")
+        success = payload.get("success_count")
+        error = payload.get("error_count")
+        print(
+            f"[{prefix}] probe end {processed}/{request_count} success={success} error={error}",
+            flush=True,
+        )
+        return
+    agent_id = payload.get("agent_id")
+    prefix = _runtime_prefix(payload)
+    if name == "context_update_start":
+        print(f"[{prefix}] requesting action from agent={agent_id}", flush=True)
+    elif name == "context_update_end":
+        print(f"[{prefix}] received action proposal from agent={agent_id}", flush=True)
+
+
+def _runtime_prefix(payload: dict[str, object]) -> str:
+    sim_time_ms = payload.get("sim_time_ms")
+    if isinstance(sim_time_ms, int):
+        return f"t={sim_time_ms}ms"
+    step_index = payload.get("step_index")
+    return f"step={step_index}"
+
+
+def _action_event_printer(event: dict[str, object]) -> None:
+    event_type = event.get("event_type")
+    actor_id = event.get("actor_id")
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return
+    if event_type not in {"action_submitted", "action_rejected", "action_validated"}:
+        return
+    action = payload.get("action")
+    if not isinstance(action, dict):
+        return
+    action_type = action.get("type")
+    action_payload = action.get("payload", {})
+    details = {
+        "event_type": event_type,
+        "actor_id": actor_id,
+        "action_type": action_type,
+        "action_payload": action_payload if isinstance(action_payload, dict) else {},
+    }
+    if event_type == "action_rejected":
+        details["error_message"] = payload.get("error_message")
+    prefix = _action_time_prefix()
+    if prefix:
+        print(f"[{prefix}] {json.dumps(details, ensure_ascii=False)}", flush=True)
+    else:
+        print(json.dumps(details, ensure_ascii=False), flush=True)
+
+
+def _update_last_sim_time(payload: dict[str, object]) -> None:
+    global _LAST_SIM_TIME_MS
+    sim_time_ms = payload.get("sim_time_ms")
+    if isinstance(sim_time_ms, int):
+        _LAST_SIM_TIME_MS = sim_time_ms
+
+
+def _action_time_prefix() -> str | None:
+    if _LAST_SIM_TIME_MS is None:
+        return None
+    return f"t={_LAST_SIM_TIME_MS}ms"
+
+
+def _is_time_mode(config: dict[str, object]) -> bool:
+    protocol = config.get("protocol")
+    if not isinstance(protocol, dict):
+        return False
+    return protocol.get("step_mode") == "time"
 
 
 if __name__ == "__main__":

@@ -31,6 +31,13 @@ EVENT_TYPES: tuple[str, ...] = (
     "proposal_responded",
     "proposal_expired",
     "resource_transferred",
+    "shape_produced",
+    "trade_offer_created",
+    "trade_offer_responded",
+    "trade_offer_cancelled",
+    "order_fulfilled",
+    "investment_made",
+    "map_progress_updated",
     "probe_asked",
     "probe_answered",
 )

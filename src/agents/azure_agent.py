@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import ssl
+import time
 from typing import Any
 import urllib.request
 import urllib.error
@@ -86,6 +88,7 @@ class AzureOpenAIAgent:
         decide_reveal = self.decide_reveal or "aggregated"
         observation_json = json.dumps(
             {
+                "agent_id": self.metadata.agent_id,
                 "state": observation.state,
                 "visible_events": observation.visible_events,
                 "memory": observation.memory,
@@ -110,6 +113,7 @@ class AzureOpenAIAgent:
         )
         return (
             f"{self.system_prompt}\n\n"
+            f"Your participant id is: {self.metadata.agent_id}\n\n"
             f"{persona_prompt}\n\n"
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
@@ -128,6 +132,7 @@ class AzureOpenAIAgent:
         construct_line = f"Construct: {construct}\n" if construct else ""
         observation_json = json.dumps(
             {
+                "agent_id": self.metadata.agent_id,
                 "state": observation.state,
                 "visible_events": observation.visible_events,
                 "memory": observation.memory,
@@ -150,6 +155,7 @@ class AzureOpenAIAgent:
         )
         return (
             f"{self.system_prompt}\n\n"
+            f"Your participant id is: {self.metadata.agent_id}\n\n"
             f"{persona_prompt}\n\n"
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
@@ -160,9 +166,17 @@ class AzureOpenAIAgent:
         endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
         if not endpoint:
             raise ValueError("AZURE_OPENAI_ENDPOINT is required.")
-        
-        deployment_name = self.metadata.model_name
-        url = f"{endpoint.rstrip('/')}/openai/deployments/{deployment_name}/chat/completions?api-version=2024-02-15-preview"
+        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("AZURE_OPENAI_API_KEY is required.")
+        deployment_name = os.environ.get("AZURE_OPENAI_DEPLOYMENT") or self.metadata.model_name
+        if not deployment_name:
+            raise ValueError("Azure deployment name is required (AZURE_OPENAI_DEPLOYMENT or model.name).")
+        api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+        url = (
+            f"{endpoint.rstrip('/')}/openai/deployments/{deployment_name}/chat/completions"
+            f"?api-version={api_version}"
+        )
         
         payload: dict[str, Any] = {
             "messages": [
@@ -181,18 +195,14 @@ class AzureOpenAIAgent:
             url,
             data=data,
             headers={
-                "Authorization": f"Bearer {os.environ.get('AZURE_OPENAI_API_KEY')}",
+                "api-key": api_key,
                 "Content-Type": "application/json",
             },
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                body = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Azure OpenAI API error: {exc.read().decode('utf-8')}") from exc
-        payload = json.loads(body)
-        return _extract_response_text(payload)
+        response_body = _http_post_with_ssl_retry(request, timeout=60)
+        response_payload = json.loads(response_body)
+        return _extract_response_text(response_payload)
 
     def _fallback_action(self) -> dict[str, Any]:
         if "do_nothing" in self.allowed_actions:
@@ -270,7 +280,64 @@ class AzureOpenAIAgent:
                 normalized_payload["reveal"] = self.decide_reveal
             return {"type": "decide", "payload": normalized_payload}
 
+        if isinstance(action_type, str) and action_type in self.allowed_actions:
+            # Preserve domain-specific actions when explicitly enabled by config.
+            return {"type": action_type, "payload": payload}
+
         return self._fallback_action()
+
+
+def _azure_ssl_context() -> ssl.SSLContext:
+    verify = os.environ.get("AZURE_OPENAI_SSL_VERIFY", "true").strip().lower()
+    if verify in ("0", "false", "no"):
+        return ssl._create_unverified_context()
+    ctx = ssl.create_default_context()
+    if hasattr(ssl, "TLSVersion"):
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
+def _azure_http_error_retryable(status_code: int, body: str) -> bool:
+    if status_code in (408, 425, 429, 500, 502, 503, 504):
+        return True
+    if "NoCapacity" in body or "rate limit" in body.lower():
+        return True
+    return False
+
+
+def _http_post_with_ssl_retry(request: urllib.request.Request, *, timeout: int) -> str:
+    raw_attempts = os.environ.get("AZURE_OPENAI_HTTP_RETRIES", "6")
+    try:
+        attempts = max(1, min(int(raw_attempts), 16))
+    except ValueError:
+        attempts = 6
+    for attempt in range(attempts):
+        try:
+            ctx = _azure_ssl_context()
+            with urllib.request.urlopen(request, timeout=timeout, context=ctx) as response:
+                return response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            body_bytes = exc.read()
+            try:
+                body_text = body_bytes.decode("utf-8")
+            except Exception:
+                body_text = repr(body_bytes)
+            code = getattr(exc, "code", None) or 0
+            if _azure_http_error_retryable(int(code), body_text) and attempt < attempts - 1:
+                delay = min(45.0, 0.75 * (2**attempt))
+                time.sleep(delay)
+                continue
+            raise RuntimeError(f"Azure OpenAI API error: {body_text}") from exc
+        except (ssl.SSLError, urllib.error.URLError, OSError) as exc:
+            if attempt < attempts - 1:
+                time.sleep(0.35 * (2**attempt))
+                continue
+            raise RuntimeError(
+                "HTTPS to Azure OpenAI failed after retries (network/TLS). "
+                "Try another network or VPN, confirm AZURE_OPENAI_ENDPOINT, "
+                "or set AZURE_OPENAI_SSL_VERIFY=0 only for debugging. "
+                f"Last error: {exc!r}"
+            ) from exc
 
 
 def _extract_response_text(payload: dict[str, Any]) -> str:

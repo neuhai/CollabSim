@@ -6,7 +6,7 @@ experiment:
 prompts:
   system: "prompts/system_instructions.md"
   persona: "prompts/persona_profile.md"
-  task: "prompts/task_instructions.md"
+  task: "prompts/task_hidden_profile_instructions.md"
   protocol: "prompts/protocol.md"
   action_space: "prompts/action_space.md"
   return_format: "prompts/return_format.md"

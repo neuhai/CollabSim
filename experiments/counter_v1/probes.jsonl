@@ -1,8 +1,0 @@
-{"probe_id": "probe_1", "answer": null, "timestamp": "2026-03-09T05:24:49.521747+00:00"}
-{"probe_id": "probe_2", "answer": null, "timestamp": "2026-03-09T05:24:49.522015+00:00"}
-{"probe_id": "probe_3", "answer": null, "timestamp": "2026-03-09T05:24:49.522107+00:00"}
-{"probe_id": "probe_1", "answer": null, "timestamp": "2026-03-09T20:53:40.476434+00:00", "template_id": "grounding_v1", "construct": "grounding", "prompt": "State your partner's current intent in one sentence."}
-{"probe_id": "probe_2", "answer": null, "timestamp": "2026-03-09T20:53:40.476922+00:00", "template_id": "grounding_v1", "construct": "grounding", "prompt": "State your partner's current intent in one sentence."}
-{"probe_id": "probe_3", "answer": null, "timestamp": "2026-03-09T20:53:40.477061+00:00", "template_id": "grounding_v1", "construct": "grounding", "prompt": "State your partner's current intent in one sentence."}
-{"probe_id": "probe_4", "answer": null, "timestamp": "2026-03-09T20:53:40.477253+00:00", "template_id": "grounding_v1", "construct": "grounding", "prompt": "State your partner's current intent in one sentence."}
-{"probe_id": "probe_5", "answer": null, "timestamp": "2026-03-09T20:53:40.477350+00:00", "template_id": "grounding_v1", "construct": "grounding", "prompt": "State your partner's current intent in one sentence."}

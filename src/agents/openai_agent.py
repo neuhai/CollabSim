@@ -84,6 +84,7 @@ class OpenAIAgent:
         decide_reveal = self.decide_reveal or "aggregated"
         observation_json = json.dumps(
             {
+                "agent_id": self.metadata.agent_id,
                 "state": observation.state,
                 "visible_events": observation.visible_events,
                 "memory": observation.memory,
@@ -108,6 +109,7 @@ class OpenAIAgent:
         )
         return (
             f"{self.system_prompt}\n\n"
+            f"Your participant id is: {self.metadata.agent_id}\n\n"
             f"{persona_prompt}\n\n"
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
@@ -126,6 +128,7 @@ class OpenAIAgent:
         construct_line = f"Construct: {construct}\n" if construct else ""
         observation_json = json.dumps(
             {
+                "agent_id": self.metadata.agent_id,
                 "state": observation.state,
                 "visible_events": observation.visible_events,
                 "memory": observation.memory,
@@ -148,6 +151,7 @@ class OpenAIAgent:
         )
         return (
             f"{self.system_prompt}\n\n"
+            f"Your participant id is: {self.metadata.agent_id}\n\n"
             f"{persona_prompt}\n\n"
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
@@ -258,6 +262,10 @@ class OpenAIAgent:
             if self.decide_reveal:
                 normalized_payload["reveal"] = self.decide_reveal
             return {"type": "decide", "payload": normalized_payload}
+
+        if isinstance(action_type, str) and action_type in self.allowed_actions:
+            # Preserve domain-specific actions when explicitly enabled by config.
+            return {"type": action_type, "payload": payload}
 
         return self._fallback_action()
 

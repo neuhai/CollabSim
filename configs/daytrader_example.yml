@@ -1,0 +1,62 @@
+experiment:
+  id: "daytrader_v1"
+  seed: 17
+  max_steps: 10
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_daytrader_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format.md"
+  action: "prompts/action_prompt.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - id: "A"
+    role: "investor"
+    model:
+      provider: "azure_openai"
+      name: "gpt-5.3-codex"
+      temperature: 0.0
+  - id: "B"
+    role: "investor"
+    model:
+      provider: "azure_openai"
+      name: "gpt-5.3-codex"
+      temperature: 0.0
+
+action_space:
+  enabled: ["communicate", "make_investment", "do_nothing"]
+
+controls:
+  communication:
+    mode: "broadcast"
+    max_messages_per_turn: 1
+
+task:
+  type: "daytrader"
+  target_steps: 8
+  starting_money: 200
+  min_trade_price: 15
+  max_trade_price: 100
+  incentive_money: 60
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "event"
+  termination:
+    condition: "max_steps"
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_action"
+  templates: ["grounding_v1", "coordination_v1"]
+  questions_path: "prompts/interview_questions.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/daytrader_v1"
+  observation_events: true

@@ -6,9 +6,10 @@ agents:
   - id: "A"
     role: "observer"
     model:
-      provider: "mock"
-      name: "mock-model"
-action_space:
+      provider: "azure_openai"
+      name: "gpt-5.3-codex"
+prompts:
+  task: "prompts/task_accumulator_instructions.md"
   enabled: ["communicate", "decide", "propose", "respond", "transfer"]
 controls:
   communication:

@@ -57,6 +57,14 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
         max_steps = experiment.get("max_steps")
         if not isinstance(max_steps, int) or max_steps <= 0:
             raise ConfigSchemaError("experiment.max_steps must be a positive integer.")
+    if "duration_sec" in experiment:
+        duration_sec = experiment.get("duration_sec")
+        if not isinstance(duration_sec, (int, float)) or duration_sec <= 0:
+            raise ConfigSchemaError("experiment.duration_sec must be a positive number.")
+    if "duration_ms" in experiment:
+        duration_ms = experiment.get("duration_ms")
+        if not isinstance(duration_ms, (int, float)) or duration_ms <= 0:
+            raise ConfigSchemaError("experiment.duration_ms must be a positive number.")
     if "prompts" in experiment:
         prompts = experiment.get("prompts")
         if not isinstance(prompts, Mapping):
@@ -98,8 +106,42 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
             raise ConfigSchemaError("protocol.decision_quorum must be a positive integer.")
     if "step_mode" in protocol:
         step_mode = protocol.get("step_mode")
-        if step_mode not in ("tick", "event"):
-            raise ConfigSchemaError("protocol.step_mode must be 'tick' or 'event'.")
+        if step_mode not in ("tick", "event", "time"):
+            raise ConfigSchemaError("protocol.step_mode must be 'tick', 'event', or 'time'.")
+    if "proactive_wakeup_interval_ms" in protocol:
+        interval = protocol.get("proactive_wakeup_interval_ms")
+        if not isinstance(interval, int) or interval <= 0:
+            raise ConfigSchemaError("protocol.proactive_wakeup_interval_ms must be a positive integer.")
+    if "max_concurrent_requests" in protocol:
+        max_workers = protocol.get("max_concurrent_requests")
+        if not isinstance(max_workers, int) or max_workers <= 0:
+            raise ConfigSchemaError("protocol.max_concurrent_requests must be a positive integer.")
+    # Backward compatibility: old key is still accepted.
+    if "max_concurrent_thinking" in protocol:
+        max_workers = protocol.get("max_concurrent_thinking")
+        if not isinstance(max_workers, int) or max_workers <= 0:
+            raise ConfigSchemaError("protocol.max_concurrent_thinking must be a positive integer.")
+    if "think_time_ms" in protocol:
+        think = protocol.get("think_time_ms")
+        if isinstance(think, int):
+            if think < 0:
+                raise ConfigSchemaError("protocol.think_time_ms must be non-negative.")
+        elif isinstance(think, Mapping):
+            lo = think.get("min")
+            hi = think.get("max")
+            if not isinstance(lo, int) or not isinstance(hi, int) or lo < 0 or hi < lo:
+                raise ConfigSchemaError("protocol.think_time_ms must be an int or {min,max} with 0 <= min <= max.")
+        else:
+            raise ConfigSchemaError("protocol.think_time_ms must be an int or object.")
+    if "action_durations_ms" in protocol:
+        durations = protocol.get("action_durations_ms")
+        if not isinstance(durations, Mapping) or not durations:
+            raise ConfigSchemaError("protocol.action_durations_ms must be a non-empty object.")
+        for action_type, duration in durations.items():
+            if not isinstance(action_type, str) or not action_type:
+                raise ConfigSchemaError("protocol.action_durations_ms keys must be non-empty strings.")
+            if not isinstance(duration, int) or duration < 0:
+                raise ConfigSchemaError("protocol.action_durations_ms values must be non-negative integers.")
     if "memory_turn_limit" in protocol:
         limit = protocol.get("memory_turn_limit")
         if not isinstance(limit, int) or limit <= 0:
@@ -204,15 +246,23 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
     _require_field(probe, "cadence", str)
     cadence = probe.get("cadence")
     if isinstance(cadence, str) and cadence:
-        allowed_cadence = {"per_action", "per_turn", "on_event"}
+        allowed_cadence = {"per_action", "per_turn", "on_event", "per_agent_n_actions"}
         if cadence not in allowed_cadence:
-            raise ConfigSchemaError("probe.cadence must be per_action, per_turn, or on_event.")
+            raise ConfigSchemaError(
+                "probe.cadence must be per_action, per_turn, on_event, or per_agent_n_actions."
+            )
         if cadence == "on_event":
             events = probe.get("events")
             if not isinstance(events, list) or not events:
                 raise ConfigSchemaError("probe.events must be a non-empty list when cadence is on_event.")
             if not all(isinstance(item, str) and item for item in events):
                 raise ConfigSchemaError("probe.events must contain non-empty strings.")
+        if cadence == "per_agent_n_actions":
+            every_n_actions = probe.get("every_n_actions")
+            if not isinstance(every_n_actions, int) or every_n_actions <= 0:
+                raise ConfigSchemaError(
+                    "probe.every_n_actions must be a positive integer when cadence is per_agent_n_actions."
+                )
     if "templates" in probe:
         _require_list_of_strings(probe, "templates")
     questions_path = probe.get("questions_path")
@@ -246,18 +296,23 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
 
     task_cfg = config["task"]
     _require_field(task_cfg, "type", str)
-    if task_cfg.get("type") == "counter" and "target_steps" in task_cfg:
+    task_type = task_cfg.get("type")
+    if task_type not in {"counter", "accumulator", "hidden_profile", "shapefactory", "daytrader", "maptask", "noop"}:
+        raise ConfigSchemaError(
+            "task.type must be one of counter, accumulator, hidden_profile, shapefactory, daytrader, maptask, noop."
+        )
+    if task_type == "counter" and "target_steps" in task_cfg:
         target_steps = task_cfg.get("target_steps")
         if not isinstance(target_steps, int) or target_steps <= 0:
             raise ConfigSchemaError("task.target_steps must be a positive integer.")
-    if task_cfg.get("type") == "accumulator":
+    if task_type == "accumulator":
         target_value = task_cfg.get("target_value")
         increment = task_cfg.get("increment")
         if target_value is not None and (not isinstance(target_value, int) or target_value <= 0):
             raise ConfigSchemaError("task.target_value must be a positive integer.")
         if increment is not None and (not isinstance(increment, int) or increment <= 0):
             raise ConfigSchemaError("task.increment must be a positive integer.")
-    if task_cfg.get("type") == "hidden_profile":
+    if task_type == "hidden_profile":
         target_steps = task_cfg.get("target_steps")
         if target_steps is not None and (not isinstance(target_steps, int) or target_steps <= 0):
             raise ConfigSchemaError("task.target_steps must be a positive integer.")
@@ -273,6 +328,56 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
                     raise ConfigSchemaError("task.private_facts keys must be non-empty strings.")
                 if not isinstance(facts, list):
                     raise ConfigSchemaError("task.private_facts values must be lists.")
+    if task_type == "shapefactory":
+        _require_positive_number_if_present(task_cfg, "starting_money", allow_zero=True)
+        _require_positive_number_if_present(task_cfg, "regular_cost")
+        _require_positive_number_if_present(task_cfg, "specialty_cost")
+        _require_positive_number_if_present(task_cfg, "min_trade_price")
+        _require_positive_number_if_present(task_cfg, "max_trade_price")
+        _require_positive_number_if_present(task_cfg, "incentive_money")
+        _require_positive_number_if_present(task_cfg, "production_time")
+        _require_positive_int_if_present(task_cfg, "max_production_num")
+        _require_positive_int_if_present(task_cfg, "shapes_order")
+        _require_positive_int_if_present(task_cfg, "shapes_types")
+        if "shape_options" in task_cfg:
+            shape_options = task_cfg.get("shape_options")
+            if not isinstance(shape_options, list) or not shape_options:
+                raise ConfigSchemaError("task.shape_options must be a non-empty list when provided.")
+            if not all(isinstance(item, str) and item for item in shape_options):
+                raise ConfigSchemaError("task.shape_options must contain non-empty strings.")
+    if task_type == "daytrader":
+        _require_positive_number_if_present(task_cfg, "starting_money", allow_zero=True)
+        _require_positive_number_if_present(task_cfg, "min_trade_price")
+        _require_positive_number_if_present(task_cfg, "max_trade_price")
+        _require_positive_number_if_present(task_cfg, "incentive_money")
+    if task_type == "maptask":
+        if "roles" in task_cfg:
+            roles = task_cfg.get("roles")
+            if not isinstance(roles, Mapping):
+                raise ConfigSchemaError("task.roles must be an object when provided.")
+            for agent_id, role in roles.items():
+                if not isinstance(agent_id, str) or not agent_id:
+                    raise ConfigSchemaError("task.roles keys must be non-empty strings.")
+                if role not in {"guider", "follower"}:
+                    raise ConfigSchemaError("task.roles values must be guider or follower.")
+        if "maps" in task_cfg:
+            maps = task_cfg.get("maps")
+            if not isinstance(maps, Mapping):
+                raise ConfigSchemaError("task.maps must be an object when provided.")
+            for agent_id, value in maps.items():
+                if not isinstance(agent_id, str) or not agent_id:
+                    raise ConfigSchemaError("task.maps keys must be non-empty strings.")
+                if not isinstance(value, Mapping):
+                    raise ConfigSchemaError("task.maps values must be objects.")
+                map_id = value.get("map_id")
+                if map_id is not None and (not isinstance(map_id, str) or not map_id):
+                    raise ConfigSchemaError("task.maps.<agent_id>.map_id must be a non-empty string when provided.")
+                if "landmarks" in value:
+                    landmarks = value.get("landmarks")
+                    if not isinstance(landmarks, list):
+                        raise ConfigSchemaError("task.maps.<agent_id>.landmarks must be a list when provided.")
+                    if not all(isinstance(item, str) and item for item in landmarks):
+                        raise ConfigSchemaError("task.maps.<agent_id>.landmarks must contain non-empty strings.")
     controls = config.get("controls", {})
     if isinstance(controls, Mapping):
         communication = controls.get("communication")
@@ -348,6 +453,33 @@ def _require_list_of_strings(mapping: Mapping[str, Any], key: str) -> None:
         raise ConfigSchemaError(f"{key} must be a non-empty list of strings.")
     if not all(isinstance(item, str) and item for item in value):
         raise ConfigSchemaError(f"{key} must contain only non-empty strings.")
+
+
+def _require_positive_int_if_present(mapping: Mapping[str, Any], key: str) -> None:
+    value = mapping.get(key)
+    if value is None:
+        return
+    if not isinstance(value, int) or value <= 0:
+        raise ConfigSchemaError(f"task.{key} must be a positive integer.")
+
+
+def _require_positive_number_if_present(
+    mapping: Mapping[str, Any],
+    key: str,
+    *,
+    allow_zero: bool = False,
+) -> None:
+    value = mapping.get(key)
+    if value is None:
+        return
+    if not isinstance(value, (int, float)):
+        raise ConfigSchemaError(f"task.{key} must be a number when provided.")
+    if allow_zero:
+        if float(value) < 0:
+            raise ConfigSchemaError(f"task.{key} must be >= 0.")
+        return
+    if float(value) <= 0:
+        raise ConfigSchemaError(f"task.{key} must be > 0.")
 
 
 def _validate_visibility_map(value: Any) -> None:

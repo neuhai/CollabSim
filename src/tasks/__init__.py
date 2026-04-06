@@ -2,5 +2,8 @@
 
 from src.tasks.accumulator import ACCUMULATOR_TASK  # re-export for convenience
 from src.tasks.counter import COUNTER_TASK  # re-export for convenience
+from src.tasks.daytrader import DAYTRADER_TASK  # re-export for convenience
 from src.tasks.defaults import NOOP_TASK  # re-export for convenience
 from src.tasks.hidden_profile import HIDDEN_PROFILE_TASK  # re-export for convenience
+from src.tasks.maptask import MAPTASK_TASK  # re-export for convenience
+from src.tasks.shapefactory import SHAPEFACTORY_TASK  # re-export for convenience

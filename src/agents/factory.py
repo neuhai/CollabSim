@@ -44,6 +44,7 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
     probe_prompt = load_text_file(probe_path) or "Question: {prompt}"
     persona_profiles = _load_persona_profiles(prompt_cfg.get("persona_profiles", "prompts/persona_profiles.json"))
     seed = config.get("experiment", {}).get("seed")
+    protocol_context = _build_protocol_context(config)
     agents: dict[str, Any] = {}
     for agent in agents_cfg:
         if not isinstance(agent, dict):
@@ -85,7 +86,7 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
                 action_prompt_template=action_prompt,
                 probe_prompt_template=probe_prompt,
                 persona_profile=persona_profile,
-                protocol_context=config.get("protocol", {}) if isinstance(config.get("protocol"), dict) else {},
+                protocol_context=protocol_context,
                 decide_reveal=decide_reveal if isinstance(decide_reveal, str) else None,
             )
         elif provider == "azure":
@@ -114,7 +115,7 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
                 action_prompt_template=action_prompt,
                 probe_prompt_template=probe_prompt,
                 persona_profile=persona_profile,
-                protocol_context=config.get("protocol", {}) if isinstance(config.get("protocol"), dict) else {},
+                protocol_context=protocol_context,
                 decide_reveal=decide_reveal if isinstance(decide_reveal, str) else None,
             )
     return agents
@@ -154,3 +155,23 @@ def _resolve_persona_profile(
     rng_seed = f"{seed}-{agent_id}"
     rng = random.Random(rng_seed)
     return rng.choice(persona_profiles)
+
+
+def _build_protocol_context(config: dict[str, Any]) -> dict[str, Any]:
+    protocol = config.get("protocol", {})
+    protocol_context = dict(protocol) if isinstance(protocol, dict) else {}
+    controls = config.get("controls", {})
+    if not isinstance(controls, dict):
+        return protocol_context
+    communication = controls.get("communication", {})
+    if not isinstance(communication, dict):
+        return protocol_context
+    mode = communication.get("mode")
+    if isinstance(mode, str) and mode:
+        protocol_context["communication_mode"] = mode
+        if mode == "direct":
+            protocol_context["allowed_message_channels"] = ["direct"]
+        elif mode == "broadcast":
+            # Broadcast mode allows both broadcast and direct channels.
+            protocol_context["allowed_message_channels"] = ["broadcast", "direct"]
+    return protocol_context

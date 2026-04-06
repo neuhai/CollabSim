@@ -94,3 +94,100 @@ probe:
 logging:
   trace_schema_version: "v0"
 ```
+
+ShapeFactory-style example:
+
+```yaml
+experiment:
+  id: "shapefactory_v1"
+  seed: 42
+  max_steps: 10
+agents:
+  - id: "A"
+    role: "builder"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+  - id: "B"
+    role: "trader"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+action_space:
+  enabled: ["communicate", "produce_shape", "propose_trade_offer", "trade_response", "cancel_trade_offer", "fulfill_order"]
+controls: {}
+task:
+  type: "shapefactory"
+  target_steps: 10
+  starting_money: 200
+  shape_options: ["circle", "square", "triangle"]
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "event"
+  termination: { condition: "max_steps" }
+probe:
+  cadence: "per_action"
+  templates: ["grounding_v1"]
+logging:
+  trace_schema_version: "v0"
+```
+
+DayTrader-style example:
+
+```yaml
+experiment:
+  id: "daytrader_v1"
+  seed: 17
+  max_steps: 10
+agents:
+  - id: "A"
+    role: "investor"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+  - id: "B"
+    role: "investor"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+action_space:
+  enabled: ["communicate", "make_investment"]
+controls: {}
+task:
+  type: "daytrader"
+  target_steps: 8
+  starting_money: 200
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "event"
+  termination: { condition: "max_steps" }
+probe:
+  cadence: "per_action"
+  templates: ["coordination_v1"]
+logging:
+  trace_schema_version: "v0"
+```
+
+MapTask-style example:
+
+```yaml
+experiment:
+  id: "maptask_v1"
+  seed: 29
+  max_steps: 12
+agents:
+  - id: "A"
+    role: "guider"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+  - id: "B"
+    role: "follower"
+    model: { provider: "local", name: "dummy", temperature: 0.0 }
+action_space:
+  enabled: ["communicate", "update_map_progress"]
+controls: {}
+task:
+  type: "maptask"
+  target_steps: 10
+  roles: { A: "guider", B: "follower" }
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "event"
+  termination: { condition: "max_steps" }
+probe:
+  cadence: "per_action"
+  templates: ["situation_awareness_v1"]
+logging:
+  trace_schema_version: "v0"
+```

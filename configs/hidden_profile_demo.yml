@@ -5,7 +5,7 @@ experiment:
 prompts:
   system: "prompts/system_instructions.md"
   persona: "prompts/persona_profile.md"
-  task: "prompts/task_instructions.md"
+  task: "prompts/task_hidden_profile_instructions.md"
   protocol: "prompts/protocol.md"
   action_space: "prompts/action_space.md"
   return_format: "prompts/return_format.md"
@@ -15,10 +15,10 @@ prompts:
 agents:
   - id: "A"
     role: "planner"
-    model: { provider: "openai", name: "gpt-4.1" }
+    model: { provider: "azure_openai", name: "gpt-5.3-codex" }
   - id: "B"
     role: "planner"
-    model: { provider: "openai", name: "gpt-4.1" }
+    model: { provider: "azure_openai", name: "gpt-5.3-codex" }
 action_space:
   enabled: ["communicate", "decide"]
   decide:
