@@ -37,5 +37,5 @@ python -m src.cli configs/daytrader_example.yml --print-actions
 ### 4) Hidden Profile
 
 ```bash
-python -m src.cli configs/hidden_profile_example.yml --print-actions
+python -m src.cli configs/hidden_profile_azure.yml --print-actions
 ```

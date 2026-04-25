@@ -2873,6 +2873,16 @@ class ExperimentController:
         allowed_actions = [item for item in enabled if isinstance(item, str)]
         if "do_nothing" not in allowed_actions:
             allowed_actions.append("do_nothing")
+        if self._task_type() == "hidden_profile":
+            phase = self._hidden_profile_phase()
+            if phase in {"initial", "final"}:
+                allowed_actions = [item for item in allowed_actions if item in {"decide", "do_nothing"}]
+                if "decide" not in allowed_actions:
+                    allowed_actions.insert(0, "decide")
+            elif phase == "discussion":
+                allowed_actions = [item for item in allowed_actions if item in {"communicate", "do_nothing"}]
+                if "communicate" not in allowed_actions:
+                    allowed_actions.insert(0, "communicate")
         persona_profile = None
         agent = self.state.agents.get(agent_id) if isinstance(self.state.agents, dict) else None
         if agent is not None:
@@ -3232,14 +3242,20 @@ class ExperimentController:
                 return "Communication is disabled by hidden_profile phase_rules.discussion_action_types."
             return None
 
+        if action_type == "do_nothing":
+            if phase == "discussion":
+                return None
+            if phase in {"initial", "final"}:
+                return None
+
         if phase == "discussion":
             if action_type in discussion_actions:
                 return None
-            allowed = ", ".join(sorted(discussion_actions))
+            allowed = ", ".join(sorted(set(discussion_actions) | {"do_nothing"}))
             return f"Discussion phase only allows these actions: {allowed}."
 
         if action_type != "decide" or not isinstance(payload, dict):
-            return "Voting phases only allow decide actions in hidden_profile."
+            return "Voting phases only allow decide or do_nothing actions in hidden_profile."
 
         decision_id = payload.get("decision_id")
         if not isinstance(decision_id, str) or not decision_id:

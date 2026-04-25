@@ -35,7 +35,7 @@ agents:
       temperature: 0.2
 
 action_space:
-  enabled: ["communicate", "decide"]
+  enabled: ["communicate", "decide", "do_nothing"]
   decide:
     reveal: "aggregated"
 
@@ -46,7 +46,7 @@ controls:
   information_distribution:
     visibility: "asymmetric"
   visibility_defaults:
-    task_state: ["shared_facts", "private_facts", "target_steps", "steps_taken", "complete"]
+    task_state: ["shared_facts", "private_facts", "target_steps", "steps_taken", "complete", "phase", "phase_rules", "discussion_started_at_sec"]
     resources: ["*"]
     turn_state: ["*"]
     buffers: ["*"]
