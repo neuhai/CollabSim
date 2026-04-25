@@ -1,7 +1,6 @@
 experiment:
   id: "hidden_profile_azure_v1"
   seed: 42
-  duration_sec: 180
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -107,7 +106,7 @@ task:
 protocol:
   turn_taking: "simultaneous"
   step_mode: "time"
-  agent_trigger_interval_sec: 10
+  agent_trigger_interval_sec: 20
   termination:
     condition: "task_complete"
   memory_turn_limit: 7

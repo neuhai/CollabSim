@@ -242,21 +242,26 @@ class ExperimentController:
 
     def _run_time_mode(self, max_steps: int | None = None) -> None:
         duration_sec = self._duration_seconds()
-        if duration_sec <= 0:
+        allow_unbounded_hidden_profile = (
+            self._task_type() == "hidden_profile" and self._termination_condition() == "task_complete"
+        )
+        if duration_sec <= 0 and not allow_unbounded_hidden_profile:
             raise ValueError("experiment.duration_sec or experiment.duration_ms must be a positive number for time mode.")
         interval_sec = self._agent_trigger_interval_sec()
         if interval_sec <= 0:
             raise ValueError("protocol.agent_trigger_interval_sec must be a positive number for time mode.")
 
         self._wall_start_monotonic = time.monotonic()
-        self._wall_duration_sec = duration_sec
+        self._wall_duration_sec = duration_sec if duration_sec > 0 else None
         self._pending_realtime_message_queue = []
         self.state.sim_time_ms = 0
         self.state.observation_cache.clear()
         for agent_id in self.state.agents.keys():
             self._set_agent_status(agent_id, "idle")
 
-        end_time = self._wall_start_monotonic + duration_sec
+        end_time = (
+            self._wall_start_monotonic + duration_sec if duration_sec > 0 else float("inf")
+        )
         next_cycle_at = self._wall_start_monotonic
         noop_streak_by_agent: dict[str, int] = {}
         noop_limit = self._noop_consecutive_cycles()
