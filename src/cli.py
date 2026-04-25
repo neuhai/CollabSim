@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         controller.runtime_listener = _runtime_step_printer
         if args.print_actions:
-            controller.runtime_listener = _runtime_progress_printer
+            controller.runtime_listener = lambda name, payload: _runtime_progress_printer(name, payload, config)
             controller.event_listener = _action_event_printer
         if _is_time_mode(config):
             print("[t=0ms] simulation started", flush=True)
@@ -133,10 +133,11 @@ def _runtime_step_printer(name: str, payload: dict[str, object]) -> None:
     print(f"[{_runtime_prefix(payload)}] starting", flush=True)
 
 
-def _runtime_progress_printer(name: str, payload: dict[str, object]) -> None:
+def _runtime_progress_printer(name: str, payload: dict[str, object], config: dict[str, object]) -> None:
     _update_last_sim_time(payload)
     if name == "step_start":
-        print(f"[{_runtime_prefix(payload)}] starting", flush=True)
+        round_phase = _daytrader_round_phase_suffix(payload, config)
+        print(f"[{_runtime_prefix(payload)}] starting{round_phase}", flush=True)
         return
     if name == "probe_start":
         prefix = _runtime_prefix(payload)
@@ -192,7 +193,7 @@ def _action_event_printer(event: dict[str, object]) -> None:
     payload = event.get("payload")
     if not isinstance(payload, dict):
         return
-    if event_type not in {"action_submitted", "action_rejected", "action_validated"}:
+    if event_type not in {"action_validated", "action_rejected"}:
         return
     action = payload.get("action")
     if not isinstance(action, dict):
@@ -225,6 +226,40 @@ def _action_time_prefix() -> str | None:
     if _LAST_SIM_TIME_MS is None:
         return None
     return f"t={_LAST_SIM_TIME_MS}ms"
+
+
+def _daytrader_round_phase_suffix(payload: dict[str, object], config: dict[str, object]) -> str:
+    round_index = payload.get("daytrader_round_index")
+    phase = payload.get("daytrader_phase")
+    if not isinstance(round_index, int) or round_index <= 0:
+        task_cfg = config.get("task")
+        protocol = config.get("protocol")
+        if not isinstance(task_cfg, dict) or not isinstance(protocol, dict):
+            return ""
+        if task_cfg.get("type") != "daytrader" or protocol.get("step_mode") != "time":
+            return ""
+        sim_time_ms = payload.get("sim_time_ms")
+        if not isinstance(sim_time_ms, int) or sim_time_ms < 0:
+            return ""
+        phase_rules = task_cfg.get("phase_rules")
+        if not isinstance(phase_rules, dict):
+            phase_rules = {}
+        decision_duration_sec = phase_rules.get("decision_duration_sec", 15.0)
+        group_chat_duration_sec = phase_rules.get("group_chat_duration_sec", 45.0)
+        if not isinstance(decision_duration_sec, (int, float)) or float(decision_duration_sec) <= 0:
+            decision_duration_sec = 15.0
+        if not isinstance(group_chat_duration_sec, (int, float)) or float(group_chat_duration_sec) <= 0:
+            group_chat_duration_sec = 45.0
+        round_duration_sec = float(decision_duration_sec) + float(group_chat_duration_sec)
+        if round_duration_sec <= 0:
+            return ""
+        elapsed_sec = float(sim_time_ms) / 1000.0
+        round_index = int(elapsed_sec // round_duration_sec) + 1
+        offset_sec = elapsed_sec % round_duration_sec
+        phase = "decision" if offset_sec < float(decision_duration_sec) else "group_chat"
+    if phase in {"decision", "group_chat"}:
+        return f" round={round_index} phase={phase}"
+    return f" round={round_index}"
 
 
 def _is_time_mode(config: dict[str, object]) -> bool:

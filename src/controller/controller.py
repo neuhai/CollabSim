@@ -10,6 +10,7 @@ import heapq
 import hashlib
 import json
 import random
+import time
 from typing import Any, Callable
 
 from src.agents.interface import ActionProposal, Observation
@@ -60,7 +61,6 @@ class ExperimentState:
     last_context_hash: dict[str, str] = field(default_factory=dict)
     context_memory: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     sim_time_ms: int = 0
-    inboxes: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 def build_state_snapshot(state: ExperimentState) -> dict[str, Any]:
@@ -163,6 +163,9 @@ class ExperimentController:
         self._message_counter = 0
         self._scheduled_counter = 0
         self._scheduled_events: list[tuple[int, int, str, dict[str, Any]]] = []
+        self._pending_realtime_message_queue: list[dict[str, Any]] = []
+        self._wall_start_monotonic: float | None = None
+        self._wall_duration_sec: float | None = None
         self._turn_rng = random.Random(self._turn_order_seed())
         self.event_listener: Callable[[dict[str, Any]], None] | None = None
         self.runtime_listener: Callable[[str, dict[str, Any]], None] | None = None
@@ -183,12 +186,25 @@ class ExperimentController:
         termination_condition = self._termination_condition()
         if self._step_mode() == "event":
             self._schedule_context_updates()
+            noop_streak = 0
+            noop_limit = self._noop_consecutive_cycles()
             while self.state.step_index < resolved_max_steps:
                 if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
                     break
-                if not self.state.pending_actions and not self.state.pending_context_updates:
+                if (
+                    not self._uses_maptask_event_pipeline()
+                    and not self.state.pending_actions
+                    and not self.state.pending_context_updates
+                ):
                     break
                 self.step()
+                all_noop = self.state.turn_state.get("all_actions_do_nothing") is True
+                if all_noop:
+                    noop_streak += 1
+                else:
+                    noop_streak = 0
+                if noop_limit > 0 and noop_streak >= noop_limit:
+                    break
         else:
             while self.state.step_index < resolved_max_steps:
                 if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
@@ -225,47 +241,345 @@ class ExperimentController:
         return "event"
 
     def _run_time_mode(self, max_steps: int | None = None) -> None:
-        duration_ms = self._duration_ms()
-        if duration_ms <= 0:
+        duration_sec = self._duration_seconds()
+        if duration_sec <= 0:
             raise ValueError("experiment.duration_sec or experiment.duration_ms must be a positive number for time mode.")
-        self._scheduled_events.clear()
-        self._scheduled_counter = 0
+        interval_sec = self._agent_trigger_interval_sec()
+        if interval_sec <= 0:
+            raise ValueError("protocol.agent_trigger_interval_sec must be a positive number for time mode.")
+
+        self._wall_start_monotonic = time.monotonic()
+        self._wall_duration_sec = duration_sec
+        self._pending_realtime_message_queue = []
         self.state.sim_time_ms = 0
         self.state.observation_cache.clear()
         for agent_id in self.state.agents.keys():
-            self.state.inboxes.setdefault(agent_id, [])
             self._set_agent_status(agent_id, "idle")
-            self._enqueue_event(0, "agent_wakeup", {"agent_id": agent_id, "reason": "start"})
 
-        heartbeat_interval = self._proactive_wakeup_interval_ms()
-        if heartbeat_interval > 0:
-            self._enqueue_event(heartbeat_interval, "heartbeat", {"interval_ms": heartbeat_interval})
+        end_time = self._wall_start_monotonic + duration_sec
+        next_cycle_at = self._wall_start_monotonic
+        noop_streak_by_agent: dict[str, int] = {}
+        noop_limit = self._noop_consecutive_cycles()
+        delayed_actions: list[tuple[float, str, dict[str, Any]]] = []
+        agent_ids = [agent_id for agent_id in self.state.agents.keys() if isinstance(agent_id, str) and agent_id]
+        previous_hidden_profile_phase: str | None = None
+        previous_daytrader_phase: str | None = None
+        daytrader_decision_phase_queried = False
 
-        while self._scheduled_events:
-            when, _, kind, payload = heapq.heappop(self._scheduled_events)
-            if when > duration_ms:
+        while True:
+            now = time.monotonic()
+            elapsed_sec = max(0.0, now - self._wall_start_monotonic)
+            self.state.sim_time_ms = int(elapsed_sec * 1000)
+            if self._task_type() == "hidden_profile":
+                phase = self._hidden_profile_phase()
+                if phase != previous_hidden_profile_phase:
+                    if phase in {"initial", "final"}:
+                        next_cycle_at = min(next_cycle_at, now)
+                previous_hidden_profile_phase = phase
+            if self._task_type() == "daytrader":
+                self._sync_daytrader_round_phase()
+                phase = self._daytrader_phase()
+                if phase == "group_chat":
+                    turns = self.state.task_state.get("group_chat_turns", 0)
+                    if not isinstance(turns, int):
+                        turns = 0
+                    if turns == 0 and not self._pending_realtime_message_queue:
+                        bootstrap_targets = self._daytrader_group_chat_bootstrap_targets(agent_ids)
+                        for target in bootstrap_targets:
+                            self._enqueue_realtime_trigger(target, phase_lock="group_chat")
+                if phase != previous_daytrader_phase:
+                    next_cycle_at = min(next_cycle_at, now)
+                    if phase == "decision":
+                        daytrader_decision_phase_queried = False
+                previous_daytrader_phase = phase
+
+            self._process_due_realtime_actions(delayed_actions, now)
+            self._flush_logs()
+
+            if now >= end_time:
                 break
-            self.state.sim_time_ms = when
             if isinstance(max_steps, int) and max_steps > 0 and self.state.step_index >= max_steps:
                 break
             if self._termination_condition() == "task_complete" and self.state.task_state.get("complete") is True:
                 break
-            if kind == "agent_wakeup":
-                self._handle_agent_wakeup(payload)
-            elif kind == "agent_decide":
-                decide_payloads = [payload]
-                while self._scheduled_events:
-                    next_when, _, next_kind, next_payload = self._scheduled_events[0]
-                    if next_when != when or next_kind != "agent_decide":
-                        break
-                    heapq.heappop(self._scheduled_events)
-                    decide_payloads.append(next_payload)
-                self._handle_agent_decide_batch(decide_payloads)
-            elif kind == "action_complete":
-                self._handle_action_complete(payload)
-            elif kind == "heartbeat":
-                self._handle_heartbeat(payload)
-            self._flush_logs()
+            if self._pending_realtime_message_queue:
+                ready_queue_entries: list[dict[str, Any]] = []
+                seen: set[str] = set()
+                remaining_queue: list[dict[str, Any]] = []
+                for entry in self._pending_realtime_message_queue:
+                    if not isinstance(entry, dict):
+                        continue
+                    recipient = entry.get("agent_id")
+                    if (
+                        isinstance(recipient, str)
+                        and recipient
+                        and recipient not in seen
+                        and self._is_agent_idle(recipient)
+                    ):
+                        ready_queue_entries.append(entry)
+                        seen.add(recipient)
+                        continue
+                    remaining_queue.append(entry)
+                self._pending_realtime_message_queue = remaining_queue
+                if ready_queue_entries:
+                    trigger_entries = ready_queue_entries
+                    if self._task_type() == "daytrader" and self._daytrader_phase() == "group_chat":
+                        # Keep free chat conversational: trigger one agent at a time in queue order.
+                        trigger_entries = ready_queue_entries[:1]
+                        if len(ready_queue_entries) > 1:
+                            self._pending_realtime_message_queue = ready_queue_entries[1:] + self._pending_realtime_message_queue
+                    trigger_targets = [entry.get("agent_id") for entry in trigger_entries if isinstance(entry.get("agent_id"), str)]
+                    phase_lock_by_agent: dict[str, str] = {}
+                    for entry in trigger_entries:
+                        recipient = entry.get("agent_id")
+                        phase_lock = entry.get("daytrader_phase_lock")
+                        if isinstance(recipient, str) and phase_lock in {"decision", "group_chat"}:
+                            phase_lock_by_agent[recipient] = phase_lock
+                    action_types = self._trigger_idle_agents_parallel(
+                        trigger_targets,
+                        delayed_actions,
+                        daytrader_phase_lock_by_agent=phase_lock_by_agent or None,
+                    )
+                    for recipient, action_type in action_types.items():
+                        if action_type == "do_nothing":
+                            noop_streak_by_agent[recipient] = noop_streak_by_agent.get(recipient, 0) + 1
+                        elif isinstance(action_type, str):
+                            noop_streak_by_agent[recipient] = 0
+                    self._flush_logs()
+                    continue
+
+            if now >= next_cycle_at:
+                should_trigger_cycle = True
+                if self._task_type() == "daytrader":
+                    if self._daytrader_phase() == "decision":
+                        should_trigger_cycle = not daytrader_decision_phase_queried
+                    else:
+                        # In group chat, only bootstrap once (A then B) and then rely on message-triggered thinking.
+                        should_trigger_cycle = False
+                if not should_trigger_cycle:
+                    next_cycle_at += interval_sec
+                    continue
+                idle_agents = [agent_id for agent_id in sorted(agent_ids) if self._is_agent_idle(agent_id)]
+                cycle_active_agents = len(idle_agents)
+                action_types = self._trigger_idle_agents_parallel(idle_agents, delayed_actions)
+                if self._task_type() == "daytrader" and self._daytrader_phase() == "decision":
+                    daytrader_decision_phase_queried = True
+                for agent_id, action_type in action_types.items():
+                    if action_type == "do_nothing":
+                        noop_streak_by_agent[agent_id] = noop_streak_by_agent.get(agent_id, 0) + 1
+                    elif isinstance(action_type, str):
+                        noop_streak_by_agent[agent_id] = 0
+                if cycle_active_agents > 0:
+                    for agent_id in agent_ids:
+                        if agent_id not in noop_streak_by_agent:
+                            noop_streak_by_agent[agent_id] = 0
+                next_cycle_at += interval_sec
+                self._flush_logs()
+                if (
+                    noop_limit > 0
+                    and agent_ids
+                    and all(noop_streak_by_agent.get(agent_id, 0) >= noop_limit for agent_id in agent_ids)
+                ):
+                    break
+                continue
+
+            earliest_due = min((due for due, _, _ in delayed_actions), default=end_time)
+            wake_at = min(next_cycle_at, earliest_due, end_time)
+            sleep_sec = max(0.0, wake_at - time.monotonic())
+            if sleep_sec > 0:
+                time.sleep(sleep_sec)
+
+    def _trigger_idle_agents_parallel(
+        self,
+        agent_ids: list[str],
+        delayed_actions: list[tuple[float, str, dict[str, Any]]],
+        daytrader_phase_lock_by_agent: dict[str, str] | None = None,
+    ) -> dict[str, str | None]:
+        if not agent_ids:
+            return {}
+        payloads: list[dict[str, Any]] = []
+        for agent_id in agent_ids:
+            if not isinstance(agent_id, str) or not agent_id:
+                continue
+            if not self._is_agent_idle(agent_id):
+                continue
+            self._set_agent_status(agent_id, "busy")
+            payload: dict[str, Any] = {"agent_id": agent_id}
+            if isinstance(daytrader_phase_lock_by_agent, dict):
+                phase_lock = daytrader_phase_lock_by_agent.get(agent_id)
+                if phase_lock in {"decision", "group_chat"}:
+                    payload["daytrader_phase_lock"] = phase_lock
+            payloads.append(payload)
+        if not payloads:
+            return {}
+        return self._handle_agent_decide_batch_realtime(payloads, delayed_actions)
+
+    def _handle_agent_decide_batch_realtime(
+        self,
+        payloads: list[dict[str, Any]],
+        delayed_actions: list[tuple[float, str, dict[str, Any]]],
+    ) -> dict[str, str | None]:
+        requested_ids: list[str] = []
+        daytrader_phase_lock_by_agent: dict[str, str] = {}
+        for payload in payloads:
+            agent_id = payload.get("agent_id")
+            if not isinstance(agent_id, str) or agent_id not in self.state.agents:
+                continue
+            if self.state.agent_status.get(agent_id) != "busy":
+                continue
+            requested_ids.append(agent_id)
+            phase_lock = payload.get("daytrader_phase_lock")
+            if phase_lock in {"decision", "group_chat"}:
+                daytrader_phase_lock_by_agent[agent_id] = phase_lock
+        if not requested_ids:
+            return {}
+
+        observation_map: dict[str, Observation] = {}
+        self._sync_daytrader_round_phase()
+        for agent_id in requested_ids:
+            agent = self.state.agents.get(agent_id)
+            if agent is None:
+                continue
+            self._apply_visibility_map_from_config(agent_id)
+            self._load_agent_memory(agent_id, agent)
+            observation_map[agent_id] = self._get_cached_observation(agent_id)
+
+        proposals: dict[str, Any] = {}
+        max_workers = min(self._max_concurrent_requests(), len(observation_map))
+        if max_workers <= 1:
+            for agent_id, observation in observation_map.items():
+                proposals[agent_id] = self._invoke_agent_context_update(agent_id, observation)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self._invoke_agent_context_update, agent_id, observation): agent_id
+                    for agent_id, observation in observation_map.items()
+                }
+                for future in as_completed(futures):
+                    agent_id = futures[future]
+                    try:
+                        proposals[agent_id] = future.result()
+                    except Exception:
+                        proposals[agent_id] = None
+
+        action_types: dict[str, str | None] = {}
+        validated_actions: dict[str, dict[str, Any]] = {}
+        for agent_id in sorted(requested_ids):
+            observation = observation_map.get(agent_id)
+            if observation is None:
+                self._set_agent_status(agent_id, "idle")
+                action_types[agent_id] = None
+                continue
+            proposal = proposals.get(agent_id)
+            action = self._finalize_time_proposal(
+                agent_id,
+                observation,
+                proposal,
+                trigger_probe=False,
+                daytrader_phase_lock=daytrader_phase_lock_by_agent.get(agent_id),
+            )
+            if action is None:
+                self._set_agent_status(agent_id, "idle")
+                action_types[agent_id] = None
+                continue
+            action_type = action.get("type")
+            action_types[agent_id] = action_type if isinstance(action_type, str) else None
+            validated_actions[agent_id] = action
+
+        self._maybe_probe_after_valid_actions_batch(validated_actions)
+
+        for agent_id in sorted(requested_ids):
+            action = validated_actions.get(agent_id)
+            if action is None:
+                continue
+            duration_ms = self._action_duration_ms(action)
+            if duration_ms <= 0:
+                self._apply_realtime_action_completion(agent_id, action)
+                continue
+            # For delayed completion (e.g. produce_shape), keep agent idle so it can
+            # continue receiving requests while task effects are finalized later.
+            self._set_agent_status(agent_id, "idle")
+            delayed_actions.append((time.monotonic() + (duration_ms / 1000.0), agent_id, action))
+        self._ensure_daytrader_freechat_bootstrap(validated_actions)
+        return action_types
+
+    def _duration_seconds(self) -> float:
+        duration_ms = self._duration_ms()
+        if duration_ms <= 0:
+            return 0.0
+        return float(duration_ms) / 1000.0
+
+    def _agent_trigger_interval_sec(self) -> float:
+        if not isinstance(self.config, dict):
+            return 10.0
+        protocol = self.config.get("protocol", {})
+        if not isinstance(protocol, dict):
+            return 10.0
+        value = protocol.get("agent_trigger_interval_sec")
+        if isinstance(value, (int, float)) and float(value) > 0:
+            return float(value)
+        return 10.0
+
+    def _noop_consecutive_cycles(self) -> int:
+        if not isinstance(self.config, dict):
+            return 3
+        protocol = self.config.get("protocol", {})
+        if not isinstance(protocol, dict):
+            return 3
+        termination = protocol.get("termination", {})
+        if not isinstance(termination, dict):
+            return 3
+        value = termination.get("noop_consecutive_cycles")
+        if isinstance(value, int) and value > 0:
+            return value
+        return 3
+
+    def _process_due_realtime_actions(
+        self,
+        delayed_actions: list[tuple[float, str, dict[str, Any]]],
+        now: float,
+    ) -> None:
+        if not delayed_actions:
+            return
+        due = [entry for entry in delayed_actions if entry[0] <= now]
+        if not due:
+            return
+        delayed_actions[:] = [entry for entry in delayed_actions if entry[0] > now]
+        due.sort(key=lambda item: item[0])
+        for _, agent_id, action in due:
+            self._apply_realtime_action_completion(agent_id, action)
+
+    def _apply_realtime_action_completion(self, agent_id: str, action: dict[str, Any]) -> None:
+        self._notify_runtime(
+            "step_start",
+            {
+                "step_index": self.state.step_index + 1,
+                "sim_time_ms": self.state.sim_time_ms,
+            },
+        )
+        self._apply_action(action, agent_id)
+        self._advance_daytrader_phase_from_action(agent_id, action)
+        self.state.step_index += 1
+        self._sync_daytrader_round_phase()
+        self.state.observation_cache.clear()
+        self.state.turn_state["message_counts"] = {}
+        if self.task_hook is not None:
+            self.task_hook(self.state)
+        state_hash = compute_state_hash(self.state)
+        self._emit_event(
+            event_type="state_updated",
+            actor_id="system",
+            visibility="system",
+            payload={
+                "step_index": self.state.step_index,
+                "sim_time_ms": self.state.sim_time_ms,
+                "state_delta": {"step_index": self.state.step_index},
+                "resulting_state_hash": state_hash,
+            },
+            event_id=f"step_{self.state.step_index}",
+        )
+        self._maybe_log_probe(had_action=True, actor_id=agent_id)
+        self._set_agent_status(agent_id, "idle")
 
     def _max_concurrent_requests(self) -> int:
         if not isinstance(self.config, dict):
@@ -315,6 +629,11 @@ class ExperimentController:
         action_type = action.get("type")
         if not isinstance(action_type, str):
             return 0
+        # In time mode, actions execute immediately except production, which can be delayed.
+        if self._step_mode() == "time":
+            if action_type == "produce_shape":
+                return int(self._produce_shape_delay_sec() * 1000)
+            return 0
         if isinstance(self.config, dict):
             protocol = self.config.get("protocol", {})
             if isinstance(protocol, dict):
@@ -338,6 +657,17 @@ class ExperimentController:
             "do_nothing": 0,
         }
         return defaults.get(action_type, 0)
+
+    def _produce_shape_delay_sec(self) -> float:
+        if not isinstance(self.config, dict):
+            return 10.0
+        protocol = self.config.get("protocol", {})
+        if not isinstance(protocol, dict):
+            return 10.0
+        value = protocol.get("produce_shape_delay_sec")
+        if isinstance(value, (int, float)) and float(value) > 0:
+            return float(value)
+        return 10.0
 
     def _handle_agent_wakeup(self, payload: dict[str, Any]) -> None:
         agent_id = payload.get("agent_id")
@@ -370,7 +700,7 @@ class ExperimentController:
             {"agent_id": agent_id, "action": action},
         )
 
-    def _handle_agent_decide_batch(self, payloads: list[dict[str, Any]]) -> None:
+    def _handle_agent_decide_batch(self, payloads: list[dict[str, Any]]) -> dict[str, str | None]:
         requested_ids: list[str] = []
         for payload in payloads:
             agent_id = payload.get("agent_id")
@@ -380,7 +710,7 @@ class ExperimentController:
                 continue
             requested_ids.append(agent_id)
         if not requested_ids:
-            return
+            return {}
 
         # Build observations in controller thread for consistent visibility filtering and cached snapshots.
         observation_map: dict[str, Observation] = {}
@@ -411,15 +741,29 @@ class ExperimentController:
                         proposals[agent_id] = None
 
         # Commit in deterministic order.
+        action_types: dict[str, str | None] = {}
+        validated_actions: dict[str, dict[str, Any]] = {}
         for agent_id in sorted(requested_ids):
             observation = observation_map.get(agent_id)
             if observation is None:
                 self._set_agent_status(agent_id, "idle")
+                action_types[agent_id] = None
                 continue
             proposal = proposals.get(agent_id)
-            action = self._finalize_time_proposal(agent_id, observation, proposal)
+            action = self._finalize_time_proposal(agent_id, observation, proposal, trigger_probe=False)
             if action is None:
                 self._set_agent_status(agent_id, "idle")
+                action_types[agent_id] = None
+                continue
+            action_type = action.get("type")
+            action_types[agent_id] = action_type if isinstance(action_type, str) else None
+            validated_actions[agent_id] = action
+
+        self._maybe_probe_after_valid_actions_batch(validated_actions)
+
+        for agent_id in sorted(requested_ids):
+            action = validated_actions.get(agent_id)
+            if action is None:
                 continue
             duration_ms = self._action_duration_ms(action)
             if duration_ms <= 0:
@@ -431,6 +775,7 @@ class ExperimentController:
                 "action_complete",
                 {"agent_id": agent_id, "action": action},
             )
+        return action_types
 
     def _invoke_agent_context_update(self, agent_id: str, observation: Observation) -> Any:
         agent = self.state.agents.get(agent_id)
@@ -442,6 +787,7 @@ class ExperimentController:
                 "agent_id": agent_id,
                 "step_index": self.state.step_index,
                 "sim_time_ms": self.state.sim_time_ms,
+                **self._daytrader_runtime_fields(),
             },
         )
         proposal = agent.context_update(observation)
@@ -451,44 +797,50 @@ class ExperimentController:
                 "agent_id": agent_id,
                 "step_index": self.state.step_index,
                 "sim_time_ms": self.state.sim_time_ms,
+                **self._daytrader_runtime_fields(),
             },
         )
         return proposal
 
-    def _finalize_time_proposal(self, agent_id: str, observation: Observation, proposal: Any) -> dict[str, Any] | None:
+    def _finalize_time_proposal(
+        self,
+        agent_id: str,
+        observation: Observation,
+        proposal: Any,
+        trigger_probe: bool = True,
+        daytrader_phase_lock: str | None = None,
+    ) -> dict[str, Any] | None:
         agent = self.state.agents.get(agent_id)
         if agent is None:
             return None
         self._capture_agent_memory(agent_id, agent)
-        # Inbox items are consumed when the agent gets a decision chance.
-        self.state.inboxes[agent_id] = []
-        if isinstance(proposal, ActionProposal):
-            action = proposal.action
-            if self._log_observation_events():
-                self._emit_event(
-                    event_type="context_update",
-                    actor_id=agent_id,
-                    visibility="system",
-                    payload={
-                        "agent_id": agent_id,
-                        "step_index": self.state.step_index,
-                        "action": proposal.action,
-                        "rationale": proposal.rationale,
-                        "alternatives": proposal.alternatives,
-                    },
-                )
-        elif isinstance(proposal, dict):
-            action = proposal.get("action")
-        else:
-            action = None
-        if not isinstance(action, dict):
+        actions, context_payload = self._extract_actions_from_proposal(proposal)
+        if self._log_observation_events() and context_payload is not None:
+            self._emit_event(
+                event_type="context_update",
+                actor_id=agent_id,
+                visibility="system",
+                payload={
+                    "agent_id": agent_id,
+                    "step_index": self.state.step_index,
+                    **context_payload,
+                },
+            )
+        if not actions:
             return None
-        if "actor_id" not in action:
-            action = {**action, "actor_id": agent_id}
-        if "timestamp" not in action:
-            action = {**action, "timestamp": self.state.step_index}
         self._record_context_memory(agent_id, observation)
-        return self._process_submitted_action(action, apply_immediately=False)
+        for action in actions:
+            normalized = action
+            if "actor_id" not in normalized:
+                normalized = {**normalized, "actor_id": agent_id}
+            if "timestamp" not in normalized:
+                normalized = {**normalized, "timestamp": self.state.step_index}
+            if daytrader_phase_lock in {"decision", "group_chat"}:
+                normalized = {**normalized, "_daytrader_phase_lock": daytrader_phase_lock}
+            processed = self._process_submitted_action(normalized, apply_immediately=False, trigger_probe=trigger_probe)
+            if processed is not None:
+                return processed
+        return None
 
     def _handle_action_complete(self, payload: dict[str, Any]) -> None:
         agent_id = payload.get("agent_id")
@@ -500,10 +852,13 @@ class ExperimentController:
             {
                 "step_index": self.state.step_index + 1,
                 "sim_time_ms": self.state.sim_time_ms,
+                **self._daytrader_runtime_fields(),
             },
         )
         self._apply_action(action, agent_id)
+        self._advance_daytrader_phase_from_action(agent_id, action)
         self.state.step_index += 1
+        self._sync_daytrader_round_phase()
         self.state.observation_cache.clear()
         if self.task_hook is not None:
             self.task_hook(self.state)
@@ -522,9 +877,6 @@ class ExperimentController:
         )
         self._maybe_log_probe(had_action=True, actor_id=agent_id)
         self._set_agent_status(agent_id, "idle")
-        inbox = self.state.inboxes.get(agent_id, [])
-        if isinstance(inbox, list) and inbox:
-            self._enqueue_event(self.state.sim_time_ms, "agent_wakeup", {"agent_id": agent_id, "reason": "inbox"})
 
     def _handle_heartbeat(self, payload: dict[str, Any]) -> None:
         interval = payload.get("interval_ms")
@@ -567,14 +919,16 @@ class ExperimentController:
             "step_start",
             {
                 "step_index": self.state.step_index + 1,
+                **self._daytrader_runtime_fields(),
             },
         )
         self.state.step_index += 1
+        self._sync_daytrader_round_phase()
         self._apply_proposal_expiry()
         self._apply_decision_timeouts()
         self.state.observation_cache.clear()
         self.state.turn_state["message_counts"] = {}
-        had_action = self._process_actions()
+        had_action, had_non_noop_action = self._process_actions()
         if self.task_hook is not None:
             self.task_hook(self.state)
         state_hash = compute_state_hash(self.state)
@@ -592,6 +946,13 @@ class ExperimentController:
         self._maybe_log_probe(had_action)
         self._schedule_context_updates()
         self._process_context_updates()
+        late_had_action = self.state.turn_state.pop("_had_action_in_context_updates", False) is True
+        late_had_non_noop = self.state.turn_state.pop("_had_non_noop_in_context_updates", False) is True
+        if late_had_action:
+            had_action = True
+        if late_had_non_noop:
+            had_non_noop_action = True
+        self.state.turn_state["all_actions_do_nothing"] = had_action and not had_non_noop_action
         self._flush_logs()
 
     def _apply_proposal_expiry(self) -> None:
@@ -689,17 +1050,91 @@ class ExperimentController:
             payload=payload,
         )
 
-    def _process_actions(self) -> bool:
+    def _process_actions(self) -> tuple[bool, bool]:
         if not self.state.pending_actions:
-            return False
+            return False, False
         pending = list(self.state.pending_actions)
         self.state.pending_actions.clear()
-        for action in pending:
-            self._process_submitted_action(action, apply_immediately=True)
-        return True
+        if self._step_mode() != "event":
+            processed_any = False
+            had_non_noop = False
+            for action in pending:
+                processed = self._process_submitted_action(action, apply_immediately=True)
+                if not isinstance(processed, dict):
+                    continue
+                processed_any = True
+                if processed.get("type") != "do_nothing":
+                    had_non_noop = True
+            return processed_any, had_non_noop
 
-    def _process_submitted_action(self, action: dict[str, Any], apply_immediately: bool) -> dict[str, Any] | None:
+        validated_actions: list[tuple[str, dict[str, Any]]] = []
+        for action in pending:
+            processed = self._process_submitted_action(action, apply_immediately=False, trigger_probe=False)
+            if not isinstance(processed, dict):
+                continue
+            actor_id = processed.get("actor_id")
+            if not isinstance(actor_id, str) or not actor_id:
+                continue
+            validated_actions.append((actor_id, processed))
+
+        self._maybe_probe_after_validated_actions_event(validated_actions)
+
+        for actor_id, action in validated_actions:
+            self._apply_action(action, actor_id)
+        had_non_noop = any(action.get("type") != "do_nothing" for _, action in validated_actions)
+        return bool(validated_actions), had_non_noop
+
+    def _extract_actions_from_proposal(self, proposal: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        actions: list[dict[str, Any]] = []
+        payload: dict[str, Any] = {}
+
+        if isinstance(proposal, ActionProposal):
+            raw_actions: Any = proposal.action
+            if isinstance(raw_actions, dict):
+                maybe_actions = raw_actions.get("actions")
+                if isinstance(maybe_actions, list):
+                    raw_actions = maybe_actions
+                else:
+                    raw_actions = [raw_actions]
+            elif not isinstance(raw_actions, list):
+                raw_actions = []
+            actions = [item for item in raw_actions if isinstance(item, dict)]
+            if actions:
+                payload["action" if len(actions) == 1 else "actions"] = actions[0] if len(actions) == 1 else actions
+            if isinstance(proposal.rationale, str):
+                payload["rationale"] = proposal.rationale
+            if isinstance(proposal.alternatives, list):
+                payload["alternatives"] = proposal.alternatives
+            return actions, payload or None
+
+        if isinstance(proposal, dict):
+            maybe_actions = proposal.get("actions")
+            if isinstance(maybe_actions, list):
+                actions = [item for item in maybe_actions if isinstance(item, dict)]
+            else:
+                action = proposal.get("action")
+                if isinstance(action, dict):
+                    actions = [action]
+            if actions:
+                payload["action" if len(actions) == 1 else "actions"] = actions[0] if len(actions) == 1 else actions
+            rationale = proposal.get("rationale")
+            if isinstance(rationale, str):
+                payload["rationale"] = rationale
+            alternatives = proposal.get("alternatives")
+            if isinstance(alternatives, list):
+                payload["alternatives"] = alternatives
+            return actions, payload or None
+
+        return actions, None
+
+    def _process_submitted_action(
+        self,
+        action: dict[str, Any],
+        apply_immediately: bool,
+        trigger_probe: bool = True,
+    ) -> dict[str, Any] | None:
         actor_id = self._extract_actor_id(action)
+        action = self._apply_action_defaults(action, actor_id=actor_id)
         self._emit_event(
             event_type="action_submitted",
             actor_id=actor_id,
@@ -714,7 +1149,6 @@ class ExperimentController:
                 payload={"action": action, "error_message": "Action type not enabled by config."},
             )
             return None
-        action = self._apply_action_defaults(action)
         try:
             validate_action(action)
         except ActionValidationError as exc:
@@ -740,9 +1174,70 @@ class ExperimentController:
             visibility="system",
             payload={"action": action, "checks_passed": ["schema"]},
         )
+        if trigger_probe:
+            self._maybe_probe_after_valid_action(action, actor_id)
         if apply_immediately:
             self._apply_action(action, actor_id)
         return action
+
+    def _maybe_probe_after_valid_action(self, action: dict[str, Any], actor_id: str) -> None:
+        action_type = action.get("type")
+        if action_type == "do_nothing":
+            return
+        if not isinstance(actor_id, str) or not actor_id:
+            return
+        records = self._log_self_probe_records(actor_id)
+        if not records:
+            return
+        cadence = "per_action"
+        relevant_agents = {actor_id}
+        self._notify_probe_start(cadence, records, relevant_agents=relevant_agents)
+        stats = self._collect_probe_responses(records, relevant_agents=relevant_agents)
+        self._notify_probe_end(cadence, records, stats)
+
+    def _maybe_probe_after_valid_actions_batch(self, actions_by_agent: dict[str, dict[str, Any]]) -> None:
+        if not actions_by_agent:
+            return
+        records: list[dict[str, Any]] = []
+        relevant_agents: set[str] = set()
+        for actor_id in sorted(actions_by_agent.keys()):
+            action = actions_by_agent.get(actor_id)
+            if not isinstance(action, dict):
+                continue
+            if action.get("type") == "do_nothing":
+                continue
+            relevant_agents.add(actor_id)
+            records.extend(self._log_self_probe_records(actor_id))
+        if not records or not relevant_agents:
+            return
+        cadence = "per_action"
+        self._notify_probe_start(cadence, records, relevant_agents=relevant_agents)
+        stats = self._collect_probe_responses(records, relevant_agents=relevant_agents)
+        self._notify_probe_end(cadence, records, stats)
+
+    def _maybe_probe_after_validated_actions_event(
+        self,
+        validated_actions: list[tuple[str, dict[str, Any]]],
+    ) -> None:
+        if not validated_actions:
+            return
+        records: list[dict[str, Any]] = []
+        relevant_agents: set[str] = set()
+        for actor_id, action in validated_actions:
+            if not isinstance(actor_id, str) or not actor_id:
+                continue
+            if not isinstance(action, dict):
+                continue
+            if action.get("type") == "do_nothing":
+                continue
+            relevant_agents.add(actor_id)
+            records.extend(self._log_self_probe_records(actor_id))
+        if not records or not relevant_agents:
+            return
+        cadence = "per_action"
+        self._notify_probe_start(cadence, records, relevant_agents=relevant_agents)
+        stats = self._collect_probe_responses(records, relevant_agents=relevant_agents)
+        self._notify_probe_end(cadence, records, stats)
 
     def _context_update_agent_time(self, agent_id: str) -> dict[str, Any] | None:
         if not isinstance(self.state.agents, dict) or not self.state.agents:
@@ -752,6 +1247,7 @@ class ExperimentController:
             return None
         if not hasattr(agent, "context_update"):
             return None
+        self._sync_daytrader_round_phase()
         self._apply_visibility_map_from_config(agent_id)
         self._load_agent_memory(agent_id, agent)
         observation = self._get_cached_observation(agent_id)
@@ -771,8 +1267,6 @@ class ExperimentController:
             },
         )
         self._capture_agent_memory(agent_id, agent)
-        # Inbox items are consumed when the agent gets a decision chance.
-        self.state.inboxes[agent_id] = []
         if isinstance(proposal, ActionProposal):
             action = proposal.action
             if self._log_observation_events():
@@ -802,47 +1296,10 @@ class ExperimentController:
         return self._process_submitted_action(action, apply_immediately=False)
 
     def _maybe_log_probe(self, had_action: bool, actor_id: str | None = None) -> None:
-        cadence = self._probe_cadence()
-        if cadence is None:
-            return
-        new_events = self.state.event_log[self.state.probe_event_index :]
-        self.state.probe_event_index = len(self.state.event_log)
-        if cadence == "per_turn":
-            records = self._log_probe_placeholder()
-            self._notify_probe_start(cadence, records)
-            stats = self._collect_probe_responses(records)
-            self._notify_probe_end(cadence, records, stats)
-            return
-        if cadence == "per_action" and had_action:
-            records = self._log_probe_placeholder()
-            self._notify_probe_start(cadence, records)
-            stats = self._collect_probe_responses(records)
-            self._notify_probe_end(cadence, records, stats)
-            return
-        if cadence == "per_agent_n_actions":
-            if not had_action:
-                return
-            if not isinstance(actor_id, str) or not actor_id:
-                return
-            every_n = self._probe_every_n_actions()
-            if every_n <= 0:
-                return
-            action_count = self.state.probe_action_counts_by_agent.get(actor_id, 0) + 1
-            self.state.probe_action_counts_by_agent[actor_id] = action_count
-            if action_count % every_n != 0:
-                return
-            records = self._log_probe_placeholder()
-            self._notify_probe_start(cadence, records)
-            stats = self._collect_probe_responses(records)
-            self._notify_probe_end(cadence, records, stats)
-            return
-        if cadence == "on_event":
-            events = self._probe_event_types()
-            if events and any(event.get("event_type") in events for event in new_events):
-                records = self._log_probe_placeholder()
-                self._notify_probe_start(cadence, records)
-                stats = self._collect_probe_responses(records)
-                self._notify_probe_end(cadence, records, stats)
+        _ = had_action
+        _ = actor_id
+        # Probing now happens immediately after each validated non-do_nothing action.
+        return
 
     def _probe_every_n_actions(self) -> int:
         if not isinstance(self.config, dict):
@@ -855,7 +1312,12 @@ class ExperimentController:
             return value
         return 1
 
-    def _notify_probe_start(self, cadence: str, records: list[dict[str, Any]]) -> None:
+    def _notify_probe_start(
+        self,
+        cadence: str,
+        records: list[dict[str, Any]],
+        relevant_agents: set[str] | None = None,
+    ) -> None:
         self._notify_runtime(
             "probe_start",
             {
@@ -863,7 +1325,7 @@ class ExperimentController:
                 "sim_time_ms": self.state.sim_time_ms,
                 "cadence": cadence,
                 "record_count": len(records),
-                "request_count": self._estimate_probe_requests(records),
+                "request_count": self._estimate_probe_requests(records, relevant_agents=relevant_agents),
             },
         )
 
@@ -882,31 +1344,52 @@ class ExperimentController:
             },
         )
 
-    def _estimate_probe_requests(self, records: list[dict[str, Any]]) -> int:
+    def _estimate_probe_requests(
+        self,
+        records: list[dict[str, Any]],
+        relevant_agents: set[str] | None = None,
+    ) -> int:
         if not records:
             return 0
         if not isinstance(self.state.agents, dict) or not self.state.agents:
             return 0
-        responders = [
+        responders = {
             agent_id
             for agent_id, agent in self.state.agents.items()
             if isinstance(agent_id, str) and hasattr(agent, "respond_probe")
-        ]
-        total = 0
-        for record in records:
-            about_agent_id = record.get("about_agent_id")
-            if isinstance(about_agent_id, str) and about_agent_id:
-                total += sum(1 for agent_id in responders if agent_id != about_agent_id)
-            else:
-                total += len(responders)
-        return total
+        }
+        if relevant_agents is not None:
+            responders = {agent_id for agent_id in responders if agent_id in relevant_agents}
+        eligible_calls = 0
+        for agent_id in responders:
+            has_record = False
+            for record in records:
+                target_actor_id = record.get("target_actor_id")
+                if isinstance(target_actor_id, str) and target_actor_id != agent_id:
+                    continue
+                about_agent_id = record.get("about_agent_id")
+                if isinstance(about_agent_id, str) and about_agent_id == agent_id:
+                    continue
+                if relevant_agents is not None and isinstance(about_agent_id, str) and about_agent_id not in relevant_agents:
+                    continue
+                has_record = True
+                break
+            if has_record:
+                eligible_calls += 1
+        return eligible_calls
 
-    def _log_probe_placeholder(self) -> list[dict[str, Any]]:
+    def _log_probe_placeholder(self, relevant_about_agents: set[str] | None = None) -> list[dict[str, Any]]:
         template_id, construct, prompt = self._next_probe_template()
         questions = self._probe_questions(prompt)
         records: list[dict[str, Any]] = []
         for question in questions:
             for about_agent_id in self._expand_probe_targets(question):
+                if (
+                    relevant_about_agents is not None
+                    and isinstance(about_agent_id, str)
+                    and about_agent_id not in relevant_about_agents
+                ):
+                    continue
                 formatted = question.replace("{other_agent_id}", about_agent_id) if about_agent_id else question
                 record: dict[str, Any] = {
                     "probe_id": f"probe_{self.state.step_index}_{len(records)+1}",
@@ -947,44 +1430,123 @@ class ExperimentController:
             return set()
         return {event for event in events if isinstance(event, str) and event}
 
-    def _collect_probe_responses(self, records: list[dict[str, Any]]) -> dict[str, int]:
-        stats = {"total": self._estimate_probe_requests(records), "processed": 0, "success": 0, "error": 0}
+    def _collect_probe_responses(
+        self,
+        records: list[dict[str, Any]],
+        relevant_agents: set[str] | None = None,
+    ) -> dict[str, int]:
+        stats = {
+            "total": self._estimate_probe_requests(records, relevant_agents=relevant_agents),
+            "processed": 0,
+            "success": 0,
+            "error": 0,
+        }
         if not records:
             return stats
         if not isinstance(self.state.agents, dict) or not self.state.agents:
             return stats
-        for record in records:
-            probe_id = record.get("probe_id")
-            template_id = record.get("template_id")
-            prompt = record.get("prompt")
-            construct = record.get("construct")
-            about_agent_id = record.get("about_agent_id")
-            if not isinstance(probe_id, str) or not probe_id:
+
+        responders: list[str] = []
+        for agent_id, agent in self.state.agents.items():
+            if not isinstance(agent_id, str) or not hasattr(agent, "respond_probe"):
                 continue
-            if not isinstance(template_id, str) or not template_id:
+            if relevant_agents is not None and agent_id not in relevant_agents:
                 continue
-            if not isinstance(prompt, str) or not prompt:
-                continue
-            for agent_id, agent in self.state.agents.items():
-                if about_agent_id == agent_id:
+            responders.append(agent_id)
+
+        request_payloads: list[tuple[str, list[dict[str, Any]], Observation, str]] = []
+        for agent_id in responders:
+            agent_records = []
+            for record in records:
+                target_actor_id = record.get("target_actor_id")
+                if isinstance(target_actor_id, str) and target_actor_id != agent_id:
                     continue
-                if not hasattr(agent, "respond_probe"):
+                about_agent_id = record.get("about_agent_id")
+                if isinstance(about_agent_id, str) and about_agent_id == agent_id:
                     continue
-                observation = self._get_cached_observation(agent_id)
-                stats["processed"] += 1
+                if relevant_agents is not None and isinstance(about_agent_id, str) and about_agent_id not in relevant_agents:
+                    continue
+                agent_records.append(record)
+            if not agent_records:
+                continue
+            observation = self._get_cached_observation(agent_id)
+            prompt = self._build_batched_probe_prompt(agent_records)
+            request_payloads.append((agent_id, agent_records, observation, prompt))
+
+        responses_by_agent: dict[str, Any] = {}
+        failed_agents: set[str] = set()
+        max_workers = min(self._max_concurrent_requests(), len(request_payloads))
+        if max_workers <= 1:
+            for agent_id, _agent_records, observation, prompt in request_payloads:
+                agent = self.state.agents.get(agent_id)
+                if agent is None:
+                    failed_agents.add(agent_id)
+                    continue
                 try:
-                    response = agent.respond_probe(probe_id, prompt, construct, observation)
+                    responses_by_agent[agent_id] = agent.respond_probe(
+                        probe_id=f"probe_batch_{self.state.step_index}_{agent_id}",
+                        prompt=prompt,
+                        construct="batched_probe",
+                        observation=observation,
+                    )
                 except Exception:
-                    stats["error"] += 1
-                    self._notify_probe_progress(stats)
+                    failed_agents.add(agent_id)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {}
+                for agent_id, _agent_records, observation, prompt in request_payloads:
+                    agent = self.state.agents.get(agent_id)
+                    if agent is None:
+                        failed_agents.add(agent_id)
+                        continue
+                    futures[
+                        executor.submit(
+                            agent.respond_probe,
+                            probe_id=f"probe_batch_{self.state.step_index}_{agent_id}",
+                            prompt=prompt,
+                            construct="batched_probe",
+                            observation=observation,
+                        )
+                    ] = agent_id
+                for future in as_completed(futures):
+                    agent_id = futures[future]
+                    try:
+                        responses_by_agent[agent_id] = future.result()
+                    except Exception:
+                        failed_agents.add(agent_id)
+
+        for agent_id, agent_records, _observation, _prompt in request_payloads:
+            stats["processed"] += 1
+            if agent_id in failed_agents:
+                stats["error"] += 1
+                self._notify_probe_progress(stats)
+                continue
+
+            response = responses_by_agent.get(agent_id)
+            parsed = self._parse_batched_probe_response(response)
+            if parsed is None:
+                stats["error"] += 1
+                self._notify_probe_progress(stats)
+                continue
+
+            had_validation_error = False
+            logged_any_response = False
+            for record in agent_records:
+                probe_id = record.get("probe_id")
+                template_id = record.get("template_id")
+                source_prompt = record.get("prompt")
+                if not isinstance(probe_id, str) or not probe_id:
                     continue
-                if isinstance(response, ProbeResponse):
-                    self.log_probe_response(template_id, response, actor_id=agent_id, prompt=prompt)
-                    stats["success"] += 1
-                elif isinstance(response, dict):
-                    answer = response.get("answer")
-                    confidence = response.get("confidence")
-                    structured_fields = response.get("structured_fields")
+                if not isinstance(template_id, str) or not template_id:
+                    continue
+                item = parsed.get(probe_id, {})
+                answer = item.get("answer")
+                confidence = item.get("confidence")
+                structured_fields = item.get("structured_fields")
+                if answer is None:
+                    had_validation_error = True
+                    continue
+                try:
                     self.log_probe_response(
                         template_id,
                         ProbeResponse(
@@ -994,12 +1556,17 @@ class ExperimentController:
                             structured_fields=structured_fields if isinstance(structured_fields, dict) else None,
                         ),
                         actor_id=agent_id,
-                        prompt=prompt,
+                        prompt=source_prompt if isinstance(source_prompt, str) else None,
                     )
-                    stats["success"] += 1
-                else:
-                    stats["error"] += 1
-                self._notify_probe_progress(stats)
+                    logged_any_response = True
+                except ProbeValidationError:
+                    had_validation_error = True
+                    continue
+            if logged_any_response and not had_validation_error:
+                stats["success"] += 1
+            else:
+                stats["error"] += 1
+            self._notify_probe_progress(stats)
         return stats
 
     def _notify_probe_progress(self, stats: dict[str, int]) -> None:
@@ -1020,6 +1587,227 @@ class ExperimentController:
                 "error_count": stats.get("error", 0),
             },
         )
+
+    def _resolve_probe_relevant_agents(self, new_events: list[dict[str, Any]]) -> set[str] | None:
+        if not isinstance(self.state.agents, dict) or not self.state.agents:
+            return None
+        all_agents = {
+            agent_id for agent_id in self.state.agents.keys() if isinstance(agent_id, str) and agent_id
+        }
+        if not new_events:
+            return None
+        relevant: set[str] = set()
+        trigger_action_types = {
+            "communicate",
+            "propose_trade_offer",
+            "trade_response",
+            "cancel_trade_offer",
+            "fulfill_order",
+        }
+        for event in new_events:
+            if not isinstance(event, dict):
+                continue
+            event_type = event.get("event_type")
+            payload = event.get("payload", {})
+            visibility = event.get("visibility")
+            if event_type != "action_submitted":
+                if visibility == "public" and isinstance(event_type, str) and "trade" in event_type:
+                    # Public trade updates are observable by everyone.
+                    return all_agents
+                continue
+            if not isinstance(payload, dict):
+                continue
+            action = payload.get("action")
+            if not isinstance(action, dict):
+                continue
+            action_type = action.get("type")
+            if action_type not in trigger_action_types:
+                continue
+            actor_id = action.get("actor_id")
+            if isinstance(actor_id, str) and actor_id in all_agents:
+                relevant.add(actor_id)
+            action_payload = action.get("payload")
+            if not isinstance(action_payload, dict):
+                continue
+            if action_type == "communicate":
+                recipients = action_payload.get("recipients")
+                if isinstance(recipients, list):
+                    for value in recipients:
+                        if isinstance(value, str) and value in all_agents:
+                            relevant.add(value)
+            elif action_type == "propose_trade_offer":
+                target_id = action_payload.get("target_id")
+                if isinstance(target_id, str) and target_id in all_agents:
+                    relevant.add(target_id)
+            elif action_type in {"trade_response", "cancel_trade_offer"}:
+                counterparty = self._resolve_trade_counterparty(action_payload, actor_id)
+                if isinstance(counterparty, str) and counterparty in all_agents:
+                    relevant.add(counterparty)
+        return relevant or None
+
+    def _resolve_probe_pairs(self, new_events: list[dict[str, Any]]) -> list[tuple[str, str]]:
+        if not isinstance(self.state.agents, dict) or not self.state.agents:
+            return []
+        all_agents = {
+            agent_id for agent_id in self.state.agents.keys() if isinstance(agent_id, str) and agent_id
+        }
+        pairs: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for event in new_events:
+            if not isinstance(event, dict) or event.get("event_type") != "action_submitted":
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            action = payload.get("action")
+            if not isinstance(action, dict):
+                continue
+            actor_id = action.get("actor_id")
+            if not isinstance(actor_id, str) or actor_id not in all_agents:
+                continue
+            action_type = action.get("type")
+            action_payload = action.get("payload")
+            if not isinstance(action_payload, dict):
+                continue
+            recipients: set[str] = set()
+            if action_type == "communicate":
+                raw = action_payload.get("recipients")
+                if isinstance(raw, list):
+                    recipients.update(
+                        value for value in raw if isinstance(value, str) and value in all_agents and value != actor_id
+                    )
+            else:
+                target_id = action_payload.get("target_id")
+                if isinstance(target_id, str) and target_id in all_agents and target_id != actor_id:
+                    recipients.add(target_id)
+                if action_type in {"trade_response", "cancel_trade_offer"} and not recipients:
+                    counterparty = self._resolve_trade_counterparty(action_payload, actor_id)
+                    if isinstance(counterparty, str) and counterparty in all_agents and counterparty != actor_id:
+                        recipients.add(counterparty)
+            for recipient in sorted(recipients):
+                pair = (actor_id, recipient)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                pairs.append(pair)
+        return pairs
+
+    def _self_probe_questions(self) -> list[str]:
+        return [
+            "What immediate goal is other agents pursuing with respect to you?",
+            "What relevant information do you believe  other agents currently knows?",
+            "What action do you expect  other agents to take next?",
+        ]
+
+    def _log_self_probe_records(self, actor_id: str) -> list[dict[str, Any]]:
+        template_id, construct, _ = self._next_probe_template()
+        questions = self._self_probe_questions()
+        records: list[dict[str, Any]] = []
+        for question in questions:
+            record: dict[str, Any] = {
+                "probe_id": f"probe_{self.state.step_index}_{len(records)+1}",
+                "answer": None,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "target_actor_id": actor_id,
+                "prompt": question,
+            }
+            if template_id is not None:
+                record["template_id"] = template_id
+            if construct is not None:
+                record["construct"] = construct
+            self.log_probe(record)
+            records.append(record)
+        return records
+
+    def _resolve_trade_counterparty(self, action_payload: dict[str, Any], actor_id: Any) -> str | None:
+        transaction_id = action_payload.get("transaction_id")
+        if not isinstance(transaction_id, str) or not isinstance(actor_id, str):
+            return None
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return None
+        for key in ("pending_offers", "completed_trades"):
+            offers = task_state.get(key)
+            if not isinstance(offers, list):
+                continue
+            for offer in offers:
+                if not isinstance(offer, dict) or offer.get("id") != transaction_id:
+                    continue
+                from_id = offer.get("from")
+                to_id = offer.get("to")
+                if isinstance(from_id, str) and from_id != actor_id:
+                    return from_id
+                if isinstance(to_id, str) and to_id != actor_id:
+                    return to_id
+        return None
+
+    def _build_batched_probe_prompt(self, records: list[dict[str, Any]]) -> str:
+        lines = [
+            "Answer all probe items in one JSON object.",
+            "Return strict JSON only with this shape:",
+            '{"answer":{"responses":[{"probe_id":"...","answer":"...","confidence":0.0,"structured_fields":{}}]}}',
+            "Use confidence in [0,1]. Keep each answer grounded in current observation and visible events.",
+            "Items:",
+        ]
+        for record in records:
+            probe_id = record.get("probe_id")
+            question = record.get("prompt")
+            about_agent = record.get("about_agent_id")
+            if not isinstance(probe_id, str) or not isinstance(question, str):
+                continue
+            if isinstance(about_agent, str) and about_agent:
+                lines.append(f'- probe_id="{probe_id}", about_agent_id="{about_agent}", question="{question}"')
+            else:
+                lines.append(f'- probe_id="{probe_id}", question="{question}"')
+        return "\n".join(lines)
+
+    def _parse_batched_probe_response(self, response: Any) -> dict[str, dict[str, Any]] | None:
+        payload: Any = None
+        if isinstance(response, ProbeResponse):
+            payload = response.answer
+        elif isinstance(response, dict):
+            payload = response.get("answer")
+            if payload is None:
+                payload = response
+        else:
+            payload = response
+
+        parsed: Any = None
+        if isinstance(payload, dict):
+            parsed = payload
+        elif isinstance(payload, str):
+            try:
+                parsed = json.loads(payload)
+            except json.JSONDecodeError:
+                return None
+        else:
+            return None
+
+        responses = None
+        if isinstance(parsed, dict):
+            direct = parsed.get("responses")
+            wrapped = parsed.get("answer")
+            if isinstance(direct, list):
+                responses = direct
+            elif isinstance(wrapped, dict):
+                nested = wrapped.get("responses")
+                if isinstance(nested, list):
+                    responses = nested
+        if not isinstance(responses, list):
+            return None
+        result: dict[str, dict[str, Any]] = {}
+        for item in responses:
+            if not isinstance(item, dict):
+                continue
+            probe_id = item.get("probe_id")
+            if not isinstance(probe_id, str) or not probe_id:
+                continue
+            result[probe_id] = {
+                "answer": item.get("answer"),
+                "confidence": item.get("confidence"),
+                "structured_fields": item.get("structured_fields"),
+            }
+        return result or None
 
     def _probe_questions(self, fallback_prompt: str | None) -> list[str]:
         if not isinstance(self.config, dict):
@@ -1071,6 +1859,7 @@ class ExperimentController:
             return
         if not self._is_agent_idle(agent_id):
             return
+        self._sync_daytrader_round_phase()
         self._apply_visibility_map_from_config(agent_id)
         self._load_agent_memory(agent_id, agent)
         observation = self._get_cached_observation(agent_id)
@@ -1092,36 +1881,35 @@ class ExperimentController:
         )
         self._set_agent_status(agent_id, "idle")
         self._capture_agent_memory(agent_id, agent)
-        if isinstance(proposal, ActionProposal):
-            action = proposal.action
-            if self._log_observation_events():
-                self._emit_event(
-                    event_type="context_update",
-                    actor_id=agent_id,
-                    visibility="system",
-                    payload={
-                        "agent_id": agent_id,
-                        "step_index": self.state.step_index,
-                        "action": proposal.action,
-                        "rationale": proposal.rationale,
-                        "alternatives": proposal.alternatives,
-                    },
-                )
-        elif isinstance(proposal, dict):
-            action = proposal.get("action")
-        else:
-            action = None
-        if not isinstance(action, dict):
+        actions, context_payload = self._extract_actions_from_proposal(proposal)
+        if self._log_observation_events() and context_payload is not None:
+            self._emit_event(
+                event_type="context_update",
+                actor_id=agent_id,
+                visibility="system",
+                payload={
+                    "agent_id": agent_id,
+                    "step_index": self.state.step_index,
+                    **context_payload,
+                },
+            )
+        if not actions:
             return
-        if "actor_id" not in action and isinstance(agent_id, str):
-            action = {**action, "actor_id": agent_id}
-        if "timestamp" not in action:
-            action = {**action, "timestamp": self.state.step_index}
-        self.state.pending_actions.append(action)
+        for action in actions:
+            normalized = action
+            if "actor_id" not in normalized and isinstance(agent_id, str):
+                normalized = {**normalized, "actor_id": agent_id}
+            if "timestamp" not in normalized:
+                normalized = {**normalized, "timestamp": self.state.step_index}
+            self.state.pending_actions.append(normalized)
         self._record_context_memory(agent_id, observation)
 
     def _schedule_context_updates(self) -> None:
         if not isinstance(self.state.agents, dict) or not self.state.agents:
+            return
+        if self._step_mode() == "event":
+            for agent_id in self.state.agents.keys():
+                self.state.pending_context_updates[agent_id] = {"signature": f"event_step_{self.state.step_index}"}
             return
         for agent_id in self.state.agents.keys():
             signature = self._context_signature(agent_id)
@@ -1134,6 +1922,45 @@ class ExperimentController:
         if not self.state.pending_context_updates:
             return
         pending = dict(self.state.pending_context_updates)
+        if self._uses_maptask_event_pipeline():
+            agent_ids = self._resolve_maptask_query_order()
+            had_action_in_context = False
+            had_non_noop_in_context = False
+            validated_actions_for_probe: list[tuple[str, dict[str, Any]]] = []
+            follower_retry_budget: dict[str, int] = {}
+            for agent_id in agent_ids:
+                if agent_id not in pending:
+                    continue
+                if not self._is_agent_idle(agent_id):
+                    continue
+                self.state.pending_context_updates.pop(agent_id, None)
+                self._context_update_agent(agent_id)
+                self.state.last_context_hash[agent_id] = pending[agent_id].get("signature", "")
+                context_had_action, context_had_non_noop, validated_actions, rejected_actors = (
+                    self._drain_pending_actions_for_maptask_event()
+                )
+                had_action_in_context = had_action_in_context or context_had_action
+                had_non_noop_in_context = had_non_noop_in_context or context_had_non_noop
+                validated_actions_for_probe.extend(validated_actions)
+                if (
+                    agent_id in rejected_actors
+                    and self._is_maptask_follower(agent_id)
+                    and follower_retry_budget.get(agent_id, 0) < 1
+                ):
+                    follower_retry_budget[agent_id] = follower_retry_budget.get(agent_id, 0) + 1
+                    self.state.observation_cache.pop(agent_id, None)
+                    self._context_update_agent(agent_id)
+                    retry_had_action, retry_had_non_noop, retry_validated_actions, _ = (
+                        self._drain_pending_actions_for_maptask_event()
+                    )
+                    had_action_in_context = had_action_in_context or retry_had_action
+                    had_non_noop_in_context = had_non_noop_in_context or retry_had_non_noop
+                    validated_actions_for_probe.extend(retry_validated_actions)
+            self._maybe_probe_after_validated_actions_event(validated_actions_for_probe)
+            self.state.turn_state["_had_action_in_context_updates"] = had_action_in_context
+            self.state.turn_state["_had_non_noop_in_context_updates"] = had_non_noop_in_context
+            return
+
         agent_ids = self._resolve_turn_order()
         if self._turn_taking() == "sequential":
             agent_ids = agent_ids[:1]
@@ -1145,6 +1972,97 @@ class ExperimentController:
             self.state.pending_context_updates.pop(agent_id, None)
             self._context_update_agent(agent_id)
             self.state.last_context_hash[agent_id] = pending[agent_id].get("signature", "")
+
+    def _drain_pending_actions_for_maptask_event(
+        self,
+    ) -> tuple[bool, bool, list[tuple[str, dict[str, Any]]], set[str]]:
+        if not self.state.pending_actions:
+            return False, False, [], set()
+        pending = list(self.state.pending_actions)
+        self.state.pending_actions.clear()
+        validated_actions: list[tuple[str, dict[str, Any]]] = []
+        rejected_actors: set[str] = set()
+        for action in pending:
+            processed = self._process_submitted_action(action, apply_immediately=False, trigger_probe=False)
+            if not isinstance(processed, dict):
+                continue
+            actor_id = processed.get("actor_id")
+            if not isinstance(actor_id, str) or not actor_id:
+                continue
+            validated_actions.append((actor_id, processed))
+            before_events = len(self.state.event_log)
+            self._apply_action(processed, actor_id)
+            if self._has_new_update_map_rejection(actor_id, start_index=before_events):
+                rejected_actors.add(actor_id)
+        had_non_noop = any(action.get("type") != "do_nothing" for _, action in validated_actions)
+        return bool(validated_actions), had_non_noop, validated_actions, rejected_actors
+
+    def _has_new_update_map_rejection(self, actor_id: str, start_index: int) -> bool:
+        if start_index < 0:
+            start_index = 0
+        for event in self.state.event_log[start_index:]:
+            if not isinstance(event, dict):
+                continue
+            if event.get("event_type") != "action_rejected":
+                continue
+            if event.get("actor_id") != actor_id:
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            action = payload.get("action")
+            if isinstance(action, dict) and action.get("type") == "update_map_progress":
+                return True
+        return False
+
+    def _is_maptask_follower(self, agent_id: str) -> bool:
+        participants = self.state.task_state.get("participants")
+        if not isinstance(participants, dict):
+            return False
+        entry = participants.get(agent_id)
+        if not isinstance(entry, dict):
+            return False
+        return entry.get("role") == "follower"
+
+    def _resolve_maptask_query_order(self) -> list[str]:
+        if not isinstance(self.state.agents, dict):
+            return []
+        participants = self.state.task_state.get("participants")
+        if not isinstance(participants, dict):
+            return sorted(self.state.agents.keys())
+
+        guiders: list[str] = []
+        followers: list[str] = []
+        others: list[str] = []
+        for agent_id in sorted(self.state.agents.keys()):
+            participant = participants.get(agent_id)
+            role = participant.get("role") if isinstance(participant, dict) else None
+            if role == "guider":
+                guiders.append(agent_id)
+            elif role == "follower":
+                followers.append(agent_id)
+            else:
+                others.append(agent_id)
+        return [*guiders, *followers, *others]
+
+    def _experiment_type(self) -> str | None:
+        if not isinstance(self.config, dict):
+            return None
+        experiment = self.config.get("experiment", {})
+        if not isinstance(experiment, dict):
+            return None
+        value = experiment.get("type")
+        if isinstance(value, str) and value:
+            return value
+        return None
+
+    def _uses_maptask_event_pipeline(self) -> bool:
+        if self._step_mode() != "event":
+            return False
+        experiment_type = self._experiment_type()
+        if experiment_type == "maptask":
+            return True
+        return self._task_type() == "maptask"
 
     def _context_signature(self, agent_id: str) -> str | None:
         try:
@@ -1480,6 +2398,10 @@ class ExperimentController:
                 recipients = payload.get("recipients") if isinstance(payload, dict) else None
                 if isinstance(recipients, list) and agent_id in recipients:
                     visible.append(event)
+                continue
+            if visibility == "system":
+                if event.get("event_type") == "action_rejected" and event.get("actor_id") == agent_id:
+                    visible.append(event)
         return visible
 
     def _visible_event_window(self, events: list[dict[str, Any]], agent_id: str) -> list[dict[str, Any]]:
@@ -1610,6 +2532,7 @@ class ExperimentController:
             self.state.agent_memory_limits[agent_id] = limit
 
     def _apply_action(self, action: dict[str, Any], actor_id: str) -> None:
+        self._queue_targeted_realtime_triggers(action, actor_id)
         if self._apply_task_action(action, actor_id):
             return
         action_type = action.get("type")
@@ -1626,6 +2549,41 @@ class ExperimentController:
             self._apply_transfer_action(actor_id, payload)
         if action_type == "do_nothing":
             return
+
+    def _queue_targeted_realtime_triggers(self, action: dict[str, Any], actor_id: str) -> None:
+        if self._step_mode() != "time":
+            return
+        if not isinstance(action, dict):
+            return
+        action_type = action.get("type")
+        payload = action.get("payload")
+        if not isinstance(payload, dict):
+            return
+        if action_type == "communicate":
+            # communicate already has dedicated trigger handling in _apply_communicate_action.
+            return
+        triggerable = {
+            "propose_trade_offer",
+            "trade_response",
+            "cancel_trade_offer",
+            "fulfill_order",
+        }
+        if action_type not in triggerable:
+            return
+
+        targets: set[str] = set()
+        target_id = payload.get("target_id")
+        if isinstance(target_id, str) and target_id and target_id != actor_id:
+            targets.add(target_id)
+
+        # Trade response/cancel typically only include transaction_id.
+        if action_type in {"trade_response", "cancel_trade_offer"} and not targets:
+            counterparty = self._resolve_trade_counterparty(payload, actor_id)
+            if isinstance(counterparty, str) and counterparty and counterparty != actor_id:
+                targets.add(counterparty)
+
+        for target in sorted(targets):
+            self._enqueue_realtime_trigger(target, phase_lock=None)
 
     def _apply_task_action(self, action: dict[str, Any], actor_id: str) -> bool:
         task_def = self.task_definition
@@ -1741,20 +2699,17 @@ class ExperimentController:
             },
         )
         self._increment_message_count(actor_id)
-        inbox_item = {
-            "message_id": message_id,
-            "from": actor_id,
-            "channel": channel,
-            "content": payload.get("content"),
-            "content_type": payload.get("content_type"),
-            "sim_time_ms": self.state.sim_time_ms,
-        }
+        daytrader_phase_lock: str | None = None
+        if self._task_type() == "daytrader" and self._daytrader_phase() == "group_chat":
+            # Keep message-triggered free chat within free-chat constraints,
+            # even if wall-clock crosses into decision phase before the reply arrives.
+            daytrader_phase_lock = "group_chat"
         for recipient in recipients:
             if recipient == actor_id and channel == "direct":
                 continue
-            self.state.inboxes.setdefault(recipient, []).append(inbox_item)
-            if self._step_mode() == "time" and self._is_agent_idle(recipient):
-                self._enqueue_event(self.state.sim_time_ms, "agent_wakeup", {"agent_id": recipient, "reason": "message"})
+            if self._step_mode() == "time":
+                # Real-time mode processes recipients strictly by message arrival order.
+                self._enqueue_realtime_trigger(recipient, phase_lock=daytrader_phase_lock)
 
     def _apply_propose_action(self, actor_id: str, payload: dict[str, Any]) -> None:
         proposal_id = payload.get("proposal_id")
@@ -1928,27 +2883,47 @@ class ExperimentController:
             reveal_value = decide_reveal if isinstance(decide_reveal, str) else "aggregated"
             return_format = return_format.replace("{decide_reveal}", reveal_value)
         protocol = self.config.get("protocol", {}) if isinstance(self.config, dict) else {}
+        elapsed_time_sec = None
+        remaining_time_sec = None
+        if self._wall_start_monotonic is not None and self._wall_duration_sec is not None:
+            elapsed_time_sec = max(0.0, time.monotonic() - self._wall_start_monotonic)
+            remaining_time_sec = max(0.0, self._wall_duration_sec - elapsed_time_sec)
         return {
             "persona_profile": persona_profile,
             "task_instructions": task_instructions,
             "protocol": protocol,
             "allowed_actions": allowed_actions,
             "return_format": return_format,
+            "elapsed_time_sec": elapsed_time_sec,
+            "remaining_time_sec": remaining_time_sec,
         }
 
-    def _apply_action_defaults(self, action: dict[str, Any]) -> dict[str, Any]:
+    def _apply_action_defaults(self, action: dict[str, Any], actor_id: str | None = None) -> dict[str, Any]:
         payload = action.get("payload")
         if not isinstance(payload, dict):
             return action
         action_type = action.get("type")
-        if action_type != "decide":
-            return action
-        if payload.get("reveal") is not None:
-            return action
-        default_reveal = self._default_decide_reveal()
-        if default_reveal is None:
-            return action
-        return {**action, "payload": {**payload, "reveal": default_reveal}}
+        if action_type == "decide":
+            if payload.get("reveal") is not None:
+                return action
+            default_reveal = self._default_decide_reveal()
+            if default_reveal is None:
+                return action
+            return {**action, "payload": {**payload, "reveal": default_reveal}}
+        if action_type == "communicate":
+            channel = payload.get("channel")
+            if channel != "broadcast":
+                return action
+            recipients = payload.get("recipients")
+            if recipients is not None:
+                return action
+            if not isinstance(actor_id, str) or not actor_id:
+                return action
+            resolved = self._resolve_recipients("broadcast", payload, actor_id)
+            if not resolved:
+                return action
+            return {**action, "payload": {**payload, "recipients": resolved}}
+        return action
 
     def _default_decide_reveal(self) -> str | None:
         if self.config is None:
@@ -1967,6 +2942,12 @@ class ExperimentController:
     def _check_action_preconditions(self, action: dict[str, Any], actor_id: str) -> str | None:
         action_type = action.get("type")
         payload = action.get("payload")
+        daytrader_error = self._check_daytrader_round_preconditions(action)
+        if daytrader_error is not None:
+            return daytrader_error
+        hidden_profile_error = self._check_hidden_profile_phase_preconditions(action, actor_id)
+        if hidden_profile_error is not None:
+            return hidden_profile_error
         if action_type != "communicate" or not isinstance(payload, dict):
             return None
         mode = self._communication_mode()
@@ -1999,6 +2980,375 @@ class ExperimentController:
             if limit is not None and self._message_count(actor_id) >= limit:
                 return "Communication limit reached for this turn."
         return None
+
+    def _check_daytrader_round_preconditions(self, action: dict[str, Any]) -> str | None:
+        if self._task_type() != "daytrader":
+            return None
+        action_type = action.get("type")
+        phase = self._daytrader_phase_for_action(action)
+        if phase == "decision":
+            allowed = {"make_investment", "do_nothing"}
+            if action_type in allowed:
+                return None
+            allowed_text = ", ".join(sorted(allowed))
+            return f"DayTrader decision phase only allows: {allowed_text}."
+        allowed = {"communicate", "do_nothing"}
+        if action_type not in allowed:
+            allowed_text = ", ".join(sorted(allowed))
+            return f"DayTrader group_chat phase only allows: {allowed_text}."
+        return None
+
+    def _sync_daytrader_round_phase(self) -> None:
+        if self._task_type() != "daytrader":
+            return
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        round_index = task_state.get("round_index")
+        if not isinstance(round_index, int) or round_index <= 0:
+            round_index = 1
+        phase = task_state.get("phase")
+        if phase not in {"decision", "group_chat"}:
+            phase = "decision"
+        task_state["round_index"] = round_index
+        task_state["phase"] = phase
+        task_state["phase_step_in_round"] = 1 if phase == "decision" else 2
+        participant_ids = self._daytrader_agent_ids()
+        if "decision_pending_agents" not in task_state or not isinstance(task_state.get("decision_pending_agents"), list):
+            task_state["decision_pending_agents"] = participant_ids
+        if "group_chat_turns" not in task_state or not isinstance(task_state.get("group_chat_turns"), int):
+            task_state["group_chat_turns"] = 0
+        if "group_chat_silent_agents" not in task_state or not isinstance(task_state.get("group_chat_silent_agents"), list):
+            task_state["group_chat_silent_agents"] = []
+
+    def _daytrader_phase_for_action(self, action: dict[str, Any]) -> str:
+        phase_lock = action.get("_daytrader_phase_lock")
+        if phase_lock in {"decision", "group_chat"}:
+            return phase_lock
+        self._sync_daytrader_round_phase()
+        return self._daytrader_phase()
+
+    def _daytrader_phase(self) -> str:
+        if self._task_type() != "daytrader":
+            return "decision"
+        task_state = self.state.task_state
+        if isinstance(task_state, dict):
+            phase = task_state.get("phase")
+            if phase in {"decision", "group_chat"}:
+                return phase
+        return "decision"
+
+    def _daytrader_group_chat_bootstrap_targets(self, agent_ids: list[str]) -> list[str]:
+        ordered = [agent_id for agent_id in sorted(agent_ids) if isinstance(agent_id, str) and agent_id]
+        if len(ordered) <= 2:
+            return ordered
+        return ordered[:2]
+
+    def _enqueue_realtime_trigger(self, agent_id: str, phase_lock: str | None = None) -> None:
+        if not isinstance(agent_id, str) or not agent_id:
+            return
+        normalized_phase_lock = phase_lock if phase_lock in {"decision", "group_chat"} else None
+        self._pending_realtime_message_queue = [
+            entry
+            for entry in self._pending_realtime_message_queue
+            if not (isinstance(entry, dict) and entry.get("agent_id") == agent_id)
+        ]
+        self._pending_realtime_message_queue.append(
+            {"agent_id": agent_id, "daytrader_phase_lock": normalized_phase_lock}
+        )
+
+    def _ensure_daytrader_freechat_bootstrap(self, validated_actions: dict[str, dict[str, Any]]) -> None:
+        if self._task_type() != "daytrader":
+            return
+        self._sync_daytrader_round_phase()
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        phase = task_state.get("phase")
+        if phase == "decision":
+            participant_ids = self._daytrader_agent_ids()
+            if not participant_ids:
+                return
+            pending = task_state.get("decision_pending_agents")
+            pending_count = len(pending) if isinstance(pending, list) else len(participant_ids)
+            if pending_count > 0:
+                return
+            task_state["phase"] = "group_chat"
+            task_state["phase_step_in_round"] = 2
+            task_state["group_chat_turns"] = 0
+            task_state["group_chat_silent_agents"] = []
+            self._pending_realtime_message_queue = []
+        if task_state.get("phase") != "group_chat":
+            return
+        turns = task_state.get("group_chat_turns", 0)
+        if not isinstance(turns, int):
+            turns = 0
+        if turns > 0:
+            return
+        if self._pending_realtime_message_queue:
+            return
+        bootstrap_targets = self._daytrader_group_chat_bootstrap_targets(self._daytrader_agent_ids())
+        for target in bootstrap_targets:
+            self._enqueue_realtime_trigger(target, phase_lock="group_chat")
+
+    def _daytrader_agent_ids(self) -> list[str]:
+        task_state = self.state.task_state
+        if isinstance(task_state, dict):
+            participants = task_state.get("participants")
+            if isinstance(participants, dict):
+                return sorted(agent_id for agent_id in participants.keys() if isinstance(agent_id, str) and agent_id)
+        if isinstance(self.state.agents, dict):
+            return sorted(agent_id for agent_id in self.state.agents.keys() if isinstance(agent_id, str) and agent_id)
+        return []
+
+    def _daytrader_group_chat_max_turns(self) -> int:
+        if not isinstance(self.config, dict):
+            return 6
+        task_cfg = self.config.get("task", {})
+        if not isinstance(task_cfg, dict):
+            return 6
+        phase_rules = task_cfg.get("phase_rules", {})
+        if not isinstance(phase_rules, dict):
+            return 6
+        value = phase_rules.get("group_chat_max_turns")
+        if isinstance(value, int) and value > 0:
+            return value
+        return 6
+
+    def _advance_daytrader_phase_from_action(self, actor_id: str, action: dict[str, Any]) -> None:
+        if self._task_type() != "daytrader":
+            return
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        self._sync_daytrader_round_phase()
+        phase = self._daytrader_phase_for_action(action)
+        agent_ids = self._daytrader_agent_ids()
+        if not agent_ids:
+            return
+        if phase == "decision":
+            pending_raw = task_state.get("decision_pending_agents")
+            pending: set[str] = {
+                item for item in pending_raw if isinstance(item, str) and item
+            } if isinstance(pending_raw, list) else set(agent_ids)
+            pending.discard(actor_id)
+            task_state["decision_pending_agents"] = sorted(pending)
+            if pending:
+                return
+            task_state["phase"] = "group_chat"
+            task_state["phase_step_in_round"] = 2
+            task_state["group_chat_turns"] = 0
+            task_state["group_chat_silent_agents"] = []
+            self._pending_realtime_message_queue = []
+            bootstrap_targets = self._daytrader_group_chat_bootstrap_targets(agent_ids)
+            self._pending_realtime_message_queue.extend(
+                {"agent_id": target, "daytrader_phase_lock": "group_chat"} for target in bootstrap_targets
+            )
+            return
+
+        turns = task_state.get("group_chat_turns", 0)
+        if not isinstance(turns, int):
+            turns = 0
+        turns += 1
+        task_state["group_chat_turns"] = turns
+        action_type = action.get("type")
+        silent_raw = task_state.get("group_chat_silent_agents")
+        silent_agents: set[str] = {
+            item for item in silent_raw if isinstance(item, str) and item
+        } if isinstance(silent_raw, list) else set()
+        if action_type == "do_nothing":
+            if isinstance(actor_id, str) and actor_id:
+                silent_agents.add(actor_id)
+        else:
+            silent_agents.clear()
+        task_state["group_chat_silent_agents"] = sorted(silent_agents)
+        if len(silent_agents) < len(agent_ids) and turns < self._daytrader_group_chat_max_turns():
+            return
+        round_index = task_state.get("round_index", 1)
+        if not isinstance(round_index, int) or round_index <= 0:
+            round_index = 1
+        round_index += 1
+        task_state["round_index"] = round_index
+        task_state["phase"] = "decision"
+        task_state["phase_step_in_round"] = 1
+        task_state["decision_pending_agents"] = list(agent_ids)
+        task_state["group_chat_turns"] = 0
+        task_state["group_chat_silent_agents"] = []
+        self._pending_realtime_message_queue = [
+            entry
+            for entry in self._pending_realtime_message_queue
+            if isinstance(entry, dict) and entry.get("daytrader_phase_lock") != "group_chat"
+        ]
+
+    def _daytrader_runtime_fields(self) -> dict[str, Any]:
+        if self._task_type() != "daytrader":
+            return {}
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return {}
+        round_index = task_state.get("round_index")
+        phase = task_state.get("phase")
+        if not isinstance(round_index, int) or round_index <= 0:
+            return {}
+        if phase not in {"decision", "group_chat"}:
+            phase = "decision"
+        return {
+            "daytrader_round_index": round_index,
+            "daytrader_phase": phase,
+        }
+
+    def _daytrader_round_phase(self, step_index: int) -> tuple[int, str]:
+        if step_index <= 0:
+            step_index = 1
+        round_index = ((step_index - 1) // 2) + 1
+        phase = "decision" if step_index % 2 == 1 else "group_chat"
+        return round_index, phase
+
+    def _check_hidden_profile_phase_preconditions(self, action: dict[str, Any], actor_id: str) -> str | None:
+        if self._task_type() != "hidden_profile":
+            return None
+        action_type = action.get("type")
+        payload = action.get("payload")
+        phase = self._hidden_profile_phase()
+        participant = self._hidden_profile_participant_state(actor_id)
+        phase_rules = self._hidden_profile_phase_rules()
+        initial_decision_id = phase_rules.get("initial_vote_decision_id", "initial_vote")
+        final_decision_id = phase_rules.get("final_vote_decision_id", "final_vote")
+        if not isinstance(initial_decision_id, str) or not initial_decision_id:
+            initial_decision_id = "initial_vote"
+        if not isinstance(final_decision_id, str) or not final_decision_id:
+            final_decision_id = "final_vote"
+        discussion_actions_raw = phase_rules.get("discussion_action_types")
+        discussion_actions: set[str] = {"communicate"}
+        if isinstance(discussion_actions_raw, list):
+            configured = {item for item in discussion_actions_raw if isinstance(item, str) and item}
+            if configured:
+                discussion_actions = configured
+
+        if action_type == "communicate":
+            if phase != "discussion":
+                return "Communication is only allowed during hidden_profile discussion phase."
+            if "communicate" not in discussion_actions:
+                return "Communication is disabled by hidden_profile phase_rules.discussion_action_types."
+            return None
+
+        if phase == "discussion":
+            if action_type in discussion_actions:
+                return None
+            allowed = ", ".join(sorted(discussion_actions))
+            return f"Discussion phase only allows these actions: {allowed}."
+
+        if action_type != "decide" or not isinstance(payload, dict):
+            return "Voting phases only allow decide actions in hidden_profile."
+
+        decision_id = payload.get("decision_id")
+        if not isinstance(decision_id, str) or not decision_id:
+            return "hidden_profile voting requires decide.decision_id."
+        choice = payload.get("choice")
+        if not isinstance(choice, str) or not choice:
+            return "hidden_profile voting requires a non-empty decide.choice."
+
+        if phase == "initial":
+            if decision_id != initial_decision_id:
+                return f"Initial phase only allows decide.decision_id = {initial_decision_id}."
+            if isinstance(participant, dict) and isinstance(participant.get("initial_vote"), str):
+                return "Initial vote already submitted for this participant."
+            return None
+
+        if phase == "final":
+            if decision_id != final_decision_id:
+                return f"Final phase only allows decide.decision_id = {final_decision_id}."
+            if isinstance(participant, dict):
+                initial_vote = participant.get("initial_vote")
+                if not isinstance(initial_vote, str) or not initial_vote:
+                    return "Final vote requires an existing initial vote first."
+                if isinstance(participant.get("final_vote"), str):
+                    return "Final vote already submitted for this participant."
+            return None
+
+        return "Discussion phase only allows configured discussion actions."
+
+    def _task_type(self) -> str | None:
+        if not isinstance(self.config, dict):
+            return None
+        task_cfg = self.config.get("task", {})
+        if not isinstance(task_cfg, dict):
+            return None
+        task_type = task_cfg.get("type")
+        if isinstance(task_type, str) and task_type:
+            return task_type
+        return None
+
+    def _hidden_profile_phase(self) -> str:
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return "discussion"
+        participants = task_state.get("participants")
+        if not isinstance(participants, dict) or not participants:
+            task_state["phase"] = "discussion"
+            return "discussion"
+
+        if not all(
+            isinstance(item, dict) and isinstance(item.get("initial_vote"), str) and item.get("initial_vote")
+            for item in participants.values()
+        ):
+            task_state["phase"] = "initial"
+            return "initial"
+
+        if self._step_mode() != "time":
+            target_steps = task_state.get("target_steps")
+            if not isinstance(target_steps, int) or target_steps <= 1:
+                task_state["phase"] = "discussion"
+                return "discussion"
+            if self.state.step_index >= target_steps:
+                task_state["phase"] = "final"
+                return "final"
+            task_state["phase"] = "discussion"
+            return "discussion"
+
+        elapsed_sec = self._elapsed_time_seconds()
+        discussion_started_at_sec = task_state.get("discussion_started_at_sec")
+        if not isinstance(discussion_started_at_sec, (int, float)):
+            discussion_started_at_sec = elapsed_sec
+            task_state["discussion_started_at_sec"] = discussion_started_at_sec
+
+        duration_sec = self._hidden_profile_discussion_duration_sec()
+        if elapsed_sec >= float(discussion_started_at_sec) + duration_sec:
+            task_state["phase"] = "final"
+            return "final"
+        task_state["phase"] = "discussion"
+        return "discussion"
+
+    def _hidden_profile_participant_state(self, actor_id: str) -> dict[str, Any] | None:
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return None
+        participants = task_state.get("participants")
+        if not isinstance(participants, dict):
+            return None
+        entry = participants.get(actor_id)
+        return entry if isinstance(entry, dict) else None
+
+    def _hidden_profile_phase_rules(self) -> dict[str, Any]:
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return {}
+        phase_rules = task_state.get("phase_rules")
+        if not isinstance(phase_rules, dict):
+            return {}
+        return phase_rules
+
+    def _hidden_profile_discussion_duration_sec(self) -> float:
+        phase_rules = self._hidden_profile_phase_rules()
+        duration_sec = phase_rules.get("discussion_duration_sec")
+        if isinstance(duration_sec, (int, float)) and float(duration_sec) >= 0:
+            return float(duration_sec)
+        return 60.0
+
+    def _elapsed_time_seconds(self) -> float:
+        if self._wall_start_monotonic is None:
+            return float(self.state.sim_time_ms) / 1000.0
+        return max(0.0, time.monotonic() - self._wall_start_monotonic)
 
     def _communication_mode(self) -> str | None:
         if self.config is None:
@@ -2164,6 +3514,15 @@ class ExperimentController:
             task_outcome=task_outcome,
         )
         write_metrics(self.run_paths, {"per_agent": result.per_agent, "per_run": result.per_run})
+        if isinstance(task_outcome, dict) and task_outcome.get("task_type") == "maptask":
+            score_map_text = task_outcome.get("maptask_score_map_text")
+            if isinstance(score_map_text, str) and score_map_text:
+                score_map_path = self.run_paths.run_dir / "maptask_score_map.txt"
+                score_map_path.write_text(score_map_text, encoding="utf-8")
+            follower_map_text = task_outcome.get("maptask_follower_map_text")
+            if isinstance(follower_map_text, str) and follower_map_text:
+                follower_map_path = self.run_paths.run_dir / "maptask_follower_working_map.txt"
+                follower_map_path.write_text(follower_map_text, encoding="utf-8")
 
     def _write_manifest(self) -> None:
         if self.run_paths is None or self.config is None or self.run_id is None:
@@ -2196,6 +3555,23 @@ class ExperimentController:
             for key in ("steps_taken", "target_steps"):
                 if key in self.state.task_state:
                     outcome[key] = self.state.task_state.get(key)
+            participants = self.state.task_state.get("participants")
+            if isinstance(participants, dict):
+                initial_votes: dict[str, str] = {}
+                final_votes: dict[str, str] = {}
+                for agent_id, entry in participants.items():
+                    if not isinstance(agent_id, str) or not isinstance(entry, dict):
+                        continue
+                    initial_vote = entry.get("initial_vote")
+                    final_vote = entry.get("final_vote")
+                    if isinstance(initial_vote, str) and initial_vote:
+                        initial_votes[agent_id] = initial_vote
+                    if isinstance(final_vote, str) and final_vote:
+                        final_votes[agent_id] = final_vote
+                if initial_votes:
+                    outcome["initial_votes"] = initial_votes
+                if final_votes:
+                    outcome["final_votes"] = final_votes
         if task_type == "shapefactory":
             for key in ("steps_taken", "target_steps"):
                 if key in self.state.task_state:
@@ -2207,7 +3583,7 @@ class ExperimentController:
             if isinstance(completed_trades, list):
                 outcome["completed_trades"] = len(completed_trades)
         if task_type == "daytrader":
-            for key in ("steps_taken", "target_steps"):
+            for key in ("steps_taken", "target_rounds", "rounds_completed", "target_steps"):
                 if key in self.state.task_state:
                     outcome[key] = self.state.task_state.get(key)
             participants = self.state.task_state.get("participants")
@@ -2234,4 +3610,144 @@ class ExperimentController:
                     if isinstance(progress, dict):
                         updates += len(progress)
                 outcome["map_progress_updates"] = updates
+                route_score = self._maptask_route_similarity(participants)
+                if route_score is not None:
+                    outcome.update(route_score)
         return outcome
+
+    def _maptask_route_similarity(self, participants: dict[str, Any]) -> dict[str, Any] | None:
+        guider_map_text: str | None = None
+        follower_map_text: str | None = None
+        follower_points: set[tuple[int, int]] = set()
+        anchor_points: set[tuple[int, int]] = set()
+
+        for participant in participants.values():
+            if not isinstance(participant, dict):
+                continue
+            role = participant.get("role")
+            map_info = participant.get("map")
+            if isinstance(map_info, dict):
+                special_points = map_info.get("special_points")
+                if isinstance(special_points, dict):
+                    for key in ("start", "finish"):
+                        entry = special_points.get(key)
+                        if not isinstance(entry, dict):
+                            continue
+                        point = self._coerce_cell_point(entry.get("cell"))
+                        if point is not None:
+                            anchor_points.add(point)
+                if role == "guider":
+                    text = map_info.get("map_text")
+                    if isinstance(text, str) and text:
+                        guider_map_text = text
+            if role == "follower":
+                working_text = participant.get("map_working_text")
+                if isinstance(working_text, str) and working_text:
+                    follower_map_text = working_text
+                raw_points = participant.get("drawn_route_points")
+                if isinstance(raw_points, list):
+                    for item in raw_points:
+                        point = self._coerce_cell_point(item)
+                        if point is not None:
+                            follower_points.add(point)
+
+        if guider_map_text is None:
+            return None
+        gt_points = self._extract_route_points_from_text(guider_map_text).union(anchor_points)
+        if not gt_points:
+            return None
+
+        score_map = self._build_maptask_score_map(guider_map_text, gt_points)
+        total_score = 0
+        for point in follower_points:
+            total_score += score_map.get(point, 0)
+        max_score = len(gt_points) * 3
+        similarity = float(total_score) / float(max_score) if max_score > 0 else 0.0
+        if similarity > 1.0:
+            similarity = 1.0
+        return {
+            "maptask_route_score": float(total_score),
+            "maptask_route_score_max": float(max_score),
+            "maptask_route_similarity": similarity,
+            "maptask_gt_points": float(len(gt_points)),
+            "maptask_follower_points": float(len(follower_points)),
+            "maptask_score_map_text": self._render_maptask_score_map(guider_map_text, score_map),
+            "maptask_follower_map_text": follower_map_text,
+        }
+
+    def _extract_route_points_from_text(self, map_text: str) -> set[tuple[int, int]]:
+        points: set[tuple[int, int]] = set()
+        for row_idx, line in enumerate(map_text.splitlines()):
+            for col_idx, cell in enumerate(line):
+                if cell == ".":
+                    points.add((row_idx, col_idx))
+        return points
+
+    def _coerce_cell_point(self, value: Any) -> tuple[int, int] | None:
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return None
+        row, col = value
+        if not isinstance(row, int) or not isinstance(col, int):
+            return None
+        return (row, col)
+
+    def _build_maptask_score_map(
+        self,
+        map_text: str,
+        gt_points: set[tuple[int, int]],
+    ) -> dict[tuple[int, int], int]:
+        lines = map_text.splitlines()
+        rows = len(lines)
+        cols = max((len(line) for line in lines), default=0)
+        score_map: dict[tuple[int, int], int] = {}
+        for row in range(rows):
+            for col in range(cols):
+                point = (row, col)
+                if point in gt_points:
+                    score_map[point] = 3
+                    continue
+                best_distance = self._nearest_chebyshev_distance(point, gt_points)
+                if best_distance is None:
+                    continue
+                if best_distance == 1:
+                    score_map[point] = 2
+                elif best_distance == 2:
+                    score_map[point] = 1
+        return score_map
+
+    def _nearest_chebyshev_distance(
+        self,
+        point: tuple[int, int],
+        gt_points: set[tuple[int, int]],
+    ) -> int | None:
+        if not gt_points:
+            return None
+        row, col = point
+        best: int | None = None
+        for gt_row, gt_col in gt_points:
+            distance = max(abs(row - gt_row), abs(col - gt_col))
+            if best is None or distance < best:
+                best = distance
+                if best == 0:
+                    return 0
+        return best
+
+    def _render_maptask_score_map(
+        self,
+        map_text: str,
+        score_map: dict[tuple[int, int], int],
+    ) -> str:
+        lines = map_text.splitlines()
+        rows = len(lines)
+        cols = max((len(line) for line in lines), default=0)
+        rendered: list[str] = []
+        for row in range(rows):
+            chars: list[str] = []
+            for col in range(cols):
+                score = score_map.get((row, col), 0)
+                if score <= 0:
+                    chars.append(" ")
+                else:
+                    chars.append(str(score))
+            rendered.append("".join(chars))
+        return "\n".join(rendered)

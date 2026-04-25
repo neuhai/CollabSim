@@ -1,6 +1,14 @@
-Return JSON with the following shape:
+Return JSON with one of the following shapes:
 {
   "action": {"type": "<one_enabled_action>", "payload": {...}},
+  "rationale": "optional short rationale"
+}
+or
+{
+  "actions": [
+    {"type": "<enabled_action_1>", "payload": {...}},
+    {"type": "<enabled_action_2>", "payload": {...}}
+  ],
   "rationale": "optional short rationale"
 }
 
@@ -18,4 +26,8 @@ Allowed payload examples:
 
 Output strictness:
 - Return JSON only. No markdown, no prose outside JSON.
-- Use exactly one action per response.
+- Use `action` for a single action, or `actions` for ordered multi-action output.
+- If you use `actions`, each action must still be valid under current task rules.
+- For maptask communication content, do not use coordinates (row/col, x/y, cell indices).
+- Use landmark names plus relative directions to describe movement and position.
+- Coordinate arrays are allowed only in `update_map_progress.map_progress.drawn_points`.

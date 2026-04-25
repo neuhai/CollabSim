@@ -1,14 +1,22 @@
 You are participating in a collaboration simulation.
-Choose one action from the allowed actions and output JSON only.
+Choose one or more actions from the allowed actions and output JSON only.
 
 Allowed actions: {allowed_actions}
 
 Observation:
 {observation_json}
 
-Return JSON with the following shape:
+Return JSON with one of the following shapes:
 {{
   "action": {{"type": "<one_of_allowed_actions>", "payload": {{...}}}},
+  "rationale": "optional short rationale"
+}}
+or
+{{
+  "actions": [
+    {{"type": "<one_of_allowed_actions>", "payload": {{...}}}},
+    {{"type": "<one_of_allowed_actions>", "payload": {{...}}}}
+  ],
   "rationale": "optional short rationale"
 }}
 
@@ -28,5 +36,8 @@ Important:
 - Match payload keys exactly.
 - If direct communication is enforced, never use broadcast.
 - If a previous action was rejected, change strategy and do not repeat the same invalid payload.
-- In shapefactory, do not default every turn to the same shape. Use your own `observation.agent_id` row in `task_state.participants`.
+- In maptask follower turns, you may combine `update_map_progress` and `communicate` in one ordered `actions` array.
+- In maptask `communicate.content`, never describe positions with coordinates (row/col, x/y, cell indices).
+- Use landmark names and relative directions for spatial descriptions.
+- Coordinates are only valid inside `update_map_progress.map_progress.drawn_points`.
 - Task-specific action constraints (per `task_type`) are defined in the task instructions block earlier in the prompt, not here.

@@ -288,11 +288,19 @@ def compute_metrics(
             per_run["completed"] = 1.0 if complete else 0.0
     if task_outcome is not None and task_outcome.get("task_type") == "daytrader":
         steps_taken = task_outcome.get("steps_taken")
+        target_rounds = task_outcome.get("target_rounds")
+        rounds_completed = task_outcome.get("rounds_completed")
         target_steps = task_outcome.get("target_steps")
         investments_count = task_outcome.get("investments_count")
         complete = task_outcome.get("complete")
         if isinstance(steps_taken, int):
             per_run["steps_taken"] = float(steps_taken)
+        if isinstance(rounds_completed, int):
+            per_run["rounds_completed"] = float(rounds_completed)
+        if isinstance(target_rounds, int) and target_rounds > 0:
+            per_run["target_rounds"] = float(target_rounds)
+            if isinstance(rounds_completed, int) and rounds_completed > 0:
+                per_run["round_efficiency"] = float(target_rounds) / float(rounds_completed)
         if isinstance(target_steps, int) and target_steps > 0:
             per_run["target_steps"] = float(target_steps)
             if isinstance(steps_taken, int) and steps_taken > 0:
@@ -305,6 +313,11 @@ def compute_metrics(
         steps_taken = task_outcome.get("steps_taken")
         target_steps = task_outcome.get("target_steps")
         map_progress_updates = task_outcome.get("map_progress_updates")
+        route_score = task_outcome.get("maptask_route_score")
+        route_score_max = task_outcome.get("maptask_route_score_max")
+        route_similarity = task_outcome.get("maptask_route_similarity")
+        gt_points = task_outcome.get("maptask_gt_points")
+        follower_points = task_outcome.get("maptask_follower_points")
         complete = task_outcome.get("complete")
         if isinstance(steps_taken, int):
             per_run["steps_taken"] = float(steps_taken)
@@ -314,6 +327,16 @@ def compute_metrics(
                 per_run["efficiency"] = float(target_steps) / float(steps_taken)
         if isinstance(map_progress_updates, int):
             per_run["task_map_progress_updates"] = float(map_progress_updates)
+        if isinstance(route_score, (int, float)):
+            per_run["task_maptask_route_score"] = float(route_score)
+        if isinstance(route_score_max, (int, float)):
+            per_run["task_maptask_route_score_max"] = float(route_score_max)
+        if isinstance(route_similarity, (int, float)):
+            per_run["task_maptask_route_similarity"] = float(route_similarity)
+        if isinstance(gt_points, (int, float)):
+            per_run["task_maptask_gt_points"] = float(gt_points)
+        if isinstance(follower_points, (int, float)):
+            per_run["task_maptask_follower_points"] = float(follower_points)
         if isinstance(complete, bool):
             per_run["completed"] = 1.0 if complete else 0.0
     event_per_run, event_per_agent = _compute_event_metrics(event_log)

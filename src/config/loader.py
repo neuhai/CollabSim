@@ -7,6 +7,7 @@ experiment configurations are structurally complete before execution.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -45,6 +46,8 @@ def load_experiment_config(path: str) -> dict[str, Any]:
         ConfigError: If the YAML cannot be parsed or required keys are missing.
     """
 
+    config_path = Path(path).expanduser().resolve()
+
     try:
         import yaml
     except ImportError as exc:  # pragma: no cover - environment dependent
@@ -54,7 +57,7 @@ def load_experiment_config(path: str) -> dict[str, Any]:
         ) from exc
 
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(config_path, "r", encoding="utf-8") as handle:
             data = yaml.safe_load(handle)
     except OSError as exc:
         raise ConfigError(f"Failed to read config file: {exc}") from exc
@@ -78,4 +81,6 @@ def load_experiment_config(path: str) -> dict[str, Any]:
         if not all(isinstance(item, str) and item for item in templates):
             raise ConfigError("probe.templates must contain only non-empty strings.")
 
+    data["__config_path"] = str(config_path)
+    data["__config_dir"] = str(config_path.parent)
     return data

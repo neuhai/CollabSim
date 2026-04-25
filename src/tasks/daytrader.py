@@ -1,5 +1,12 @@
 """DayTrader task runtime with investment actions."""
 
+# Task audit summary:
+# - Initial state: participants with money + investment_history, rules for min/max trade price,
+#   and target_rounds/steps_taken/complete.
+# - Supported actions: task-specific make_investment via daytrader_apply_action.
+# - Stop condition: task marks complete when rounds_completed >= target_rounds.
+# - Probing trigger: no task-local trigger; probing cadence is controlled by controller/probe config.
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -11,9 +18,15 @@ def daytrader_init_state(config: dict[str, Any]) -> dict[str, Any]:
     """Initialize DayTrader task state."""
 
     task_cfg = config.get("task", {})
-    target_steps = task_cfg.get("target_steps", 30)
-    if not isinstance(target_steps, int) or target_steps <= 0:
-        raise ValueError("task.target_steps must be a positive integer for daytrader.")
+    target_rounds = task_cfg.get("target_rounds")
+    if target_rounds is None:
+        legacy_target_steps = task_cfg.get("target_steps")
+        if isinstance(legacy_target_steps, int) and legacy_target_steps > 0:
+            target_rounds = max(1, (legacy_target_steps + 1) // 2)
+        else:
+            target_rounds = 15
+    if not isinstance(target_rounds, int) or target_rounds <= 0:
+        raise ValueError("task.target_rounds must be a positive integer for daytrader.")
     starting_money = task_cfg.get("starting_money", 200.0)
     min_trade_price = float(task_cfg.get("min_trade_price", 15.0))
     max_trade_price = float(task_cfg.get("max_trade_price", 100.0))
@@ -29,11 +42,20 @@ def daytrader_init_state(config: dict[str, Any]) -> dict[str, Any]:
             "money": float(starting_money),
             "investment_history": [],
         }
+    participant_ids = sorted(participants.keys())
     return {
         "task_type": "daytrader",
-        "target_steps": target_steps,
+        "target_rounds": target_rounds,
+        "target_steps": target_rounds * 2,
         "steps_taken": 0,
+        "rounds_completed": 0,
         "complete": False,
+        "round_index": 1,
+        "phase": "decision",
+        "phase_step_in_round": 1,
+        "decision_pending_agents": participant_ids,
+        "group_chat_turns": 0,
+        "group_chat_silent_agents": [],
         "participants": participants,
         "rules": {
             "min_trade_price": min_trade_price,
@@ -48,11 +70,12 @@ def daytrader_step(state: dict[str, Any]) -> dict[str, Any]:
     if state.get("complete") is True:
         return state
     steps_taken = state.get("steps_taken", 0)
-    target_steps = state.get("target_steps", 0)
-    if not isinstance(steps_taken, int) or not isinstance(target_steps, int):
-        raise ValueError("daytrader state steps must be integers.")
+    target_rounds = state.get("target_rounds", 0)
+    if not isinstance(steps_taken, int) or not isinstance(target_rounds, int):
+        raise ValueError("daytrader state steps/rounds must be integers.")
     state["steps_taken"] = steps_taken + 1
-    if state["steps_taken"] >= target_steps:
+    state["rounds_completed"] = state["steps_taken"] // 2
+    if state["rounds_completed"] >= target_rounds:
         state["complete"] = True
     return state
 

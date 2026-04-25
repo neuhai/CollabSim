@@ -54,8 +54,19 @@ class AzureOpenAIAgent:
         prompt = self._build_action_prompt(observation)
         text = self._call_azure_openai(prompt)
         parsed = _parse_json(text)
-        action = parsed.get("action") if isinstance(parsed, dict) else None
         rationale = parsed.get("rationale") if isinstance(parsed, dict) else None
+        if isinstance(parsed, dict):
+            raw_actions = parsed.get("actions")
+            if isinstance(raw_actions, list):
+                actions = self._normalize_actions(raw_actions)
+                if len(actions) == 1:
+                    return ActionProposal(action=actions[0], rationale=rationale if isinstance(rationale, str) else None)
+                if len(actions) > 1:
+                    return {
+                        "actions": actions,
+                        "rationale": rationale if isinstance(rationale, str) else None,
+                    }
+        action = parsed.get("action") if isinstance(parsed, dict) else None
         action = self._normalize_action(action)
         return ActionProposal(action=action, rationale=rationale if isinstance(rationale, str) else None)
 
@@ -129,7 +140,8 @@ class AzureOpenAIAgent:
         construct: str | None,
         observation: Observation,
     ) -> str:
-        construct_line = f"Construct: {construct}\n" if construct else ""
+        allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
+        decide_reveal = self.decide_reveal or "aggregated"
         observation_json = json.dumps(
             {
                 "agent_id": self.metadata.agent_id,
@@ -145,13 +157,13 @@ class AzureOpenAIAgent:
             self.protocol_prompt_template,
             {"protocol_json": json.dumps(self.protocol_context or {}, ensure_ascii=False)},
         )
-        probe_prompt = _render_template(
-            self.probe_prompt_template,
-            {
-                "construct_line": construct_line.rstrip(),
-                "prompt": prompt,
-                "observation_json": observation_json,
-            },
+        action_space_prompt = _render_template(self.action_space_prompt_template, {"allowed_actions": allowed})
+        probe_context = f"Construct: {construct}\n\n" if construct else ""
+        probe_prompt = (
+            "Instead of selecting an action, answer the probe items below.\n"
+            f"{probe_context}"
+            f"{prompt}\n\n"
+            "Return strict JSON only."
         )
         return (
             f"{self.system_prompt}\n\n"
@@ -159,6 +171,19 @@ class AzureOpenAIAgent:
             f"{persona_prompt}\n\n"
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
+            f"{action_space_prompt}\n\n"
+            f"Observation:\n{observation_json}\n\n"
+            f"Action payload references:\n"
+            f"- communicate: {{\"channel\":\"broadcast|direct\",\"content\":\"...\",\"content_type\":\"text\",\"recipients\":[\"B\"] (required for direct)}}\n"
+            f"- decide: {{\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"{decide_reveal}\"}}\n"
+            f"- produce_shape: {{\"shape\":\"<choose_from_task_state>\",\"quantity\":1}}\n"
+            f"- propose_trade_offer: {{\"offer_type\":\"buy|sell\",\"shape\":\"<shape_from_task_state>\",\"price_per_unit\":20,\"target_id\":\"B\",\"quantity\":1}}\n"
+            f"- trade_response: {{\"transaction_id\":\"offer_2_1\",\"response_type\":\"accept|decline\"}}\n"
+            f"- cancel_trade_offer: {{\"transaction_id\":\"offer_2_1\"}}\n"
+            f"- fulfill_order: {{\"order_indices\":[0,1]}}\n"
+            f"- make_investment: {{\"invest_price\":30,\"invest_decision_type\":\"individual|group\"}}\n"
+            f"- update_map_progress: {{\"map_progress\":{{\"segment\":\"start_to_bridge\",\"status\":\"confirmed\"}}}}\n"
+            f"- do_nothing: {{\"reason\":\"...\"}}\n\n"
             f"{probe_prompt}"
         )
 
@@ -286,6 +311,16 @@ class AzureOpenAIAgent:
 
         return self._fallback_action()
 
+    def _normalize_actions(self, actions: Any) -> list[dict[str, Any]]:
+        if not isinstance(actions, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            normalized.append(self._normalize_action(action))
+        return normalized
+
 
 def _azure_ssl_context() -> ssl.SSLContext:
     verify = os.environ.get("AZURE_OPENAI_SSL_VERIFY", "true").strip().lower()
@@ -306,11 +341,11 @@ def _azure_http_error_retryable(status_code: int, body: str) -> bool:
 
 
 def _http_post_with_ssl_retry(request: urllib.request.Request, *, timeout: int) -> str:
-    raw_attempts = os.environ.get("AZURE_OPENAI_HTTP_RETRIES", "6")
+    raw_attempts = os.environ.get("AZURE_OPENAI_HTTP_RETRIES", "10")
     try:
-        attempts = max(1, min(int(raw_attempts), 16))
+        attempts = max(1, min(int(raw_attempts), 24))
     except ValueError:
-        attempts = 6
+        attempts = 10
     for attempt in range(attempts):
         try:
             ctx = _azure_ssl_context()
@@ -324,13 +359,15 @@ def _http_post_with_ssl_retry(request: urllib.request.Request, *, timeout: int) 
                 body_text = repr(body_bytes)
             code = getattr(exc, "code", None) or 0
             if _azure_http_error_retryable(int(code), body_text) and attempt < attempts - 1:
-                delay = min(45.0, 0.75 * (2**attempt))
+                delay = min(60.0, 1.0 * (2**attempt))
                 time.sleep(delay)
                 continue
             raise RuntimeError(f"Azure OpenAI API error: {body_text}") from exc
         except (ssl.SSLError, urllib.error.URLError, OSError) as exc:
             if attempt < attempts - 1:
-                time.sleep(0.35 * (2**attempt))
+                # TLS EOF/network flaps often recover with a longer exponential backoff.
+                delay = min(60.0, 1.0 * (2**attempt))
+                time.sleep(delay)
                 continue
             raise RuntimeError(
                 "HTTPS to Azure OpenAI failed after retries (network/TLS). "

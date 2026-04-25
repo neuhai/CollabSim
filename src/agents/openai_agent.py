@@ -50,8 +50,19 @@ class OpenAIAgent:
         prompt = self._build_action_prompt(observation)
         text = self._call_openai(prompt)
         parsed = _parse_json(text)
-        action = parsed.get("action") if isinstance(parsed, dict) else None
         rationale = parsed.get("rationale") if isinstance(parsed, dict) else None
+        if isinstance(parsed, dict):
+            raw_actions = parsed.get("actions")
+            if isinstance(raw_actions, list):
+                actions = self._normalize_actions(raw_actions)
+                if len(actions) == 1:
+                    return ActionProposal(action=actions[0], rationale=rationale if isinstance(rationale, str) else None)
+                if len(actions) > 1:
+                    return {
+                        "actions": actions,
+                        "rationale": rationale if isinstance(rationale, str) else None,
+                    }
+        action = parsed.get("action") if isinstance(parsed, dict) else None
         action = self._normalize_action(action)
         return ActionProposal(action=action, rationale=rationale if isinstance(rationale, str) else None)
 
@@ -125,7 +136,8 @@ class OpenAIAgent:
         construct: str | None,
         observation: Observation,
     ) -> str:
-        construct_line = f"Construct: {construct}\n" if construct else ""
+        allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
+        decide_reveal = self.decide_reveal or "aggregated"
         observation_json = json.dumps(
             {
                 "agent_id": self.metadata.agent_id,
@@ -141,13 +153,13 @@ class OpenAIAgent:
             self.protocol_prompt_template,
             {"protocol_json": json.dumps(self.protocol_context or {}, ensure_ascii=False)},
         )
-        probe_prompt = _render_template(
-            self.probe_prompt_template,
-            {
-                "construct_line": construct_line.rstrip(),
-                "prompt": prompt,
-                "observation_json": observation_json,
-            },
+        action_space_prompt = _render_template(self.action_space_prompt_template, {"allowed_actions": allowed})
+        probe_context = f"Construct: {construct}\n\n" if construct else ""
+        probe_prompt = (
+            "Instead of selecting an action, answer the probe items below.\n"
+            f"{probe_context}"
+            f"{prompt}\n\n"
+            "Return strict JSON only."
         )
         return (
             f"{self.system_prompt}\n\n"
@@ -155,6 +167,19 @@ class OpenAIAgent:
             f"{persona_prompt}\n\n"
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
+            f"{action_space_prompt}\n\n"
+            f"Observation:\n{observation_json}\n\n"
+            f"Action payload references:\n"
+            f"- communicate: {{\"channel\":\"broadcast|direct\",\"content\":\"...\",\"content_type\":\"text\",\"recipients\":[\"B\"] (required for direct)}}\n"
+            f"- decide: {{\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"{decide_reveal}\"}}\n"
+            f"- produce_shape: {{\"shape\":\"<choose_from_task_state>\",\"quantity\":1}}\n"
+            f"- propose_trade_offer: {{\"offer_type\":\"buy|sell\",\"shape\":\"<shape_from_task_state>\",\"price_per_unit\":20,\"target_id\":\"B\",\"quantity\":1}}\n"
+            f"- trade_response: {{\"transaction_id\":\"offer_2_1\",\"response_type\":\"accept|decline\"}}\n"
+            f"- cancel_trade_offer: {{\"transaction_id\":\"offer_2_1\"}}\n"
+            f"- fulfill_order: {{\"order_indices\":[0,1]}}\n"
+            f"- make_investment: {{\"invest_price\":30,\"invest_decision_type\":\"individual|group\"}}\n"
+            f"- update_map_progress: {{\"map_progress\":{{\"segment\":\"start_to_bridge\",\"status\":\"confirmed\"}}}}\n"
+            f"- do_nothing: {{\"reason\":\"...\"}}\n\n"
             f"{probe_prompt}"
         )
 
@@ -268,6 +293,16 @@ class OpenAIAgent:
             return {"type": action_type, "payload": payload}
 
         return self._fallback_action()
+
+    def _normalize_actions(self, actions: Any) -> list[dict[str, Any]]:
+        if not isinstance(actions, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            normalized.append(self._normalize_action(action))
+        return normalized
 
 
 def _extract_response_text(payload: dict[str, Any]) -> str:

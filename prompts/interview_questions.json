@@ -1,5 +1,5 @@
 [
-  "What is {other_agent_id} working on right now?",
-  "What information does {other_agent_id} likely have that you do not?",
-  "What action do you expect {other_agent_id} to take next, and why?"
+  "What immediate goal is other agents pursuing with respect to you?",
+  "What relevant information do you believe  other agents currently knows?",
+  "What action do you expect  other agents to take next?"
 ]

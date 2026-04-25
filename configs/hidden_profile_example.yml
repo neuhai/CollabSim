@@ -1,22 +1,24 @@
 experiment:
   id: "hidden_profile_v1"
   seed: 7
-  max_steps: 6
+  duration_sec: 180
 agents:
   - id: "A"
     role: "planner"
-    model: { provider: "azure_openai", name: "gpt-5.3-codex", temperature: 0.0 }
+    model: { provider: "azure", name: "gpt-5.3-codex", temperature: 0.0 }
   - id: "B"
     role: "planner"
-    model: { provider: "azure_openai", name: "gpt-5.3-codex", temperature: 0.0 }
+    model: { provider: "azure", name: "gpt-5.3-codex", temperature: 0.0 }
 prompts:
   task: "prompts/task_hidden_profile_instructions.md"
 action_space:
-  enabled: ["communicate", "decide"]
-controls: {}
+  enabled: ["communicate", "decide", "do_nothing"]
+controls:
+  communication:
+    mode: "broadcast"
 task:
   type: "hidden_profile"
-  target_steps: 3
+  target_steps: 100000
   shared_facts:
     - "Objective is to pick the optimal plan."
   private_facts:
@@ -24,10 +26,18 @@ task:
       - "Plan X is low risk."
     B:
       - "Plan Y yields higher reward."
+  phase_rules:
+    initial_vote_decision_id: "initial_vote"
+    final_vote_decision_id: "final_vote"
+    discussion_action_types: ["communicate"]
+    discussion_duration_sec: 120
 protocol:
-  turn_taking: "sequential"
-  step_mode: "event"
-  termination: { condition: "max_steps" }
+  turn_taking: "simultaneous"
+  step_mode: "time"
+  agent_trigger_interval_sec: 40
+  termination:
+    condition: "time_elapsed"
+    noop_consecutive_cycles: 3
 probe:
   cadence: "per_action"
   templates: ["grounding_v1", "coordination_v1"]

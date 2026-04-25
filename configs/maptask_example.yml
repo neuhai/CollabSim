@@ -1,7 +1,8 @@
 experiment:
   id: "maptask_v1"
+  type: "maptask"
   seed: 29
-  max_steps: 12
+  max_steps: 120
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -9,8 +10,8 @@ prompts:
   task: "prompts/task_maptask_instructions.md"
   protocol: "prompts/protocol.md"
   action_space: "prompts/action_space.md"
-  return_format: "prompts/return_format.md"
-  action: "prompts/action_prompt.md"
+  return_format: "prompts/return_format_maptask.md"
+  action: "prompts/action_prompt_maptask.md"
   probe: "prompts/probe_prompt.md"
   persona_profiles: "prompts/persona_profiles.json"
 
@@ -18,13 +19,13 @@ agents:
   - id: "A"
     role: "guider"
     model:
-      provider: "azure_openai"
+      provider: "azure"
       name: "gpt-5.3-codex"
       temperature: 0.0
   - id: "B"
     role: "follower"
     model:
-      provider: "azure_openai"
+      provider: "azure"
       name: "gpt-5.3-codex"
       temperature: 0.0
 
@@ -38,23 +39,18 @@ controls:
 
 task:
   type: "maptask"
-  target_steps: 10
+  target_steps: 10000
+  landmarks_path: "maptask_landmarks_cells.yml"
   roles:
     A: "guider"
     B: "follower"
-  maps:
-    A:
-      map_id: "guide_map_1"
-      landmarks: ["river", "bridge", "tower"]
-    B:
-      map_id: "follow_map_1"
-      landmarks: ["river", "bridge", "tower"]
 
 protocol:
   turn_taking: "simultaneous"
   step_mode: "event"
   termination:
     condition: "max_steps"
+    noop_consecutive_cycles: 2
   memory_turn_limit: 7
 
 probe:

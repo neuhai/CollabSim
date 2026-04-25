@@ -89,9 +89,15 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
         if condition is not None and not isinstance(condition, str):
             raise ConfigSchemaError("protocol.termination.condition must be a string when provided.")
         if isinstance(condition, str) and condition:
-            allowed_conditions = {"max_steps", "task_complete"}
+            allowed_conditions = {"max_steps", "task_complete", "time_elapsed"}
             if condition not in allowed_conditions:
-                raise ConfigSchemaError("protocol.termination.condition must be max_steps or task_complete.")
+                raise ConfigSchemaError(
+                    "protocol.termination.condition must be max_steps, task_complete, or time_elapsed."
+                )
+        if "noop_consecutive_cycles" in termination:
+            noop_cycles = termination.get("noop_consecutive_cycles")
+            if not isinstance(noop_cycles, int) or noop_cycles <= 0:
+                raise ConfigSchemaError("protocol.termination.noop_consecutive_cycles must be a positive integer.")
     if "proposal_expiry_steps" in protocol:
         expiry_steps = protocol.get("proposal_expiry_steps")
         if not isinstance(expiry_steps, int) or expiry_steps <= 0:
@@ -108,6 +114,14 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
         step_mode = protocol.get("step_mode")
         if step_mode not in ("tick", "event", "time"):
             raise ConfigSchemaError("protocol.step_mode must be 'tick', 'event', or 'time'.")
+    if "agent_trigger_interval_sec" in protocol:
+        interval_sec = protocol.get("agent_trigger_interval_sec")
+        if not isinstance(interval_sec, (int, float)) or float(interval_sec) <= 0:
+            raise ConfigSchemaError("protocol.agent_trigger_interval_sec must be a positive number.")
+    if "produce_shape_delay_sec" in protocol:
+        delay_sec = protocol.get("produce_shape_delay_sec")
+        if not isinstance(delay_sec, (int, float)) or float(delay_sec) <= 0:
+            raise ConfigSchemaError("protocol.produce_shape_delay_sec must be a positive number.")
     if "proactive_wakeup_interval_ms" in protocol:
         interval = protocol.get("proactive_wakeup_interval_ms")
         if not isinstance(interval, int) or interval <= 0:
@@ -328,6 +342,44 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
                     raise ConfigSchemaError("task.private_facts keys must be non-empty strings.")
                 if not isinstance(facts, list):
                     raise ConfigSchemaError("task.private_facts values must be lists.")
+        discussion_duration_sec = task_cfg.get("discussion_duration_sec")
+        if discussion_duration_sec is not None and (
+            not isinstance(discussion_duration_sec, (int, float)) or float(discussion_duration_sec) < 0
+        ):
+            raise ConfigSchemaError("task.discussion_duration_sec must be a non-negative number when provided.")
+        phase_rules = task_cfg.get("phase_rules")
+        if phase_rules is not None:
+            if not isinstance(phase_rules, Mapping):
+                raise ConfigSchemaError("task.phase_rules must be an object when provided.")
+            initial_vote_decision_id = phase_rules.get("initial_vote_decision_id")
+            if initial_vote_decision_id is not None and (
+                not isinstance(initial_vote_decision_id, str) or not initial_vote_decision_id
+            ):
+                raise ConfigSchemaError(
+                    "task.phase_rules.initial_vote_decision_id must be a non-empty string when provided."
+                )
+            final_vote_decision_id = phase_rules.get("final_vote_decision_id")
+            if final_vote_decision_id is not None and (
+                not isinstance(final_vote_decision_id, str) or not final_vote_decision_id
+            ):
+                raise ConfigSchemaError(
+                    "task.phase_rules.final_vote_decision_id must be a non-empty string when provided."
+                )
+            discussion_action_types = phase_rules.get("discussion_action_types")
+            if discussion_action_types is not None:
+                if not isinstance(discussion_action_types, list):
+                    raise ConfigSchemaError("task.phase_rules.discussion_action_types must be a list when provided.")
+                if not all(isinstance(item, str) and item for item in discussion_action_types):
+                    raise ConfigSchemaError(
+                        "task.phase_rules.discussion_action_types must contain non-empty strings."
+                    )
+            phase_discussion_duration = phase_rules.get("discussion_duration_sec")
+            if phase_discussion_duration is not None and (
+                not isinstance(phase_discussion_duration, (int, float)) or float(phase_discussion_duration) < 0
+            ):
+                raise ConfigSchemaError(
+                    "task.phase_rules.discussion_duration_sec must be a non-negative number when provided."
+                )
     if task_type == "shapefactory":
         _require_positive_number_if_present(task_cfg, "starting_money", allow_zero=True)
         _require_positive_number_if_present(task_cfg, "regular_cost")
@@ -346,11 +398,30 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
             if not all(isinstance(item, str) and item for item in shape_options):
                 raise ConfigSchemaError("task.shape_options must contain non-empty strings.")
     if task_type == "daytrader":
+        if "target_steps" in task_cfg:
+            raise ConfigSchemaError("daytrader uses task.target_rounds; remove task.target_steps.")
+        target_rounds = task_cfg.get("target_rounds")
+        if not isinstance(target_rounds, int) or target_rounds <= 0:
+            raise ConfigSchemaError("task.target_rounds must be a positive integer for daytrader.")
+        phase_rules = task_cfg.get("phase_rules")
+        if phase_rules is not None:
+            if not isinstance(phase_rules, Mapping):
+                raise ConfigSchemaError("task.phase_rules must be an object when provided for daytrader.")
+            group_chat_max_turns = phase_rules.get("group_chat_max_turns")
+            if group_chat_max_turns is not None and (
+                not isinstance(group_chat_max_turns, int) or group_chat_max_turns <= 0
+            ):
+                raise ConfigSchemaError(
+                    "task.phase_rules.group_chat_max_turns must be a positive integer when provided."
+                )
         _require_positive_number_if_present(task_cfg, "starting_money", allow_zero=True)
         _require_positive_number_if_present(task_cfg, "min_trade_price")
         _require_positive_number_if_present(task_cfg, "max_trade_price")
         _require_positive_number_if_present(task_cfg, "incentive_money")
     if task_type == "maptask":
+        landmarks_path = task_cfg.get("landmarks_path")
+        if landmarks_path is not None and (not isinstance(landmarks_path, str) or not landmarks_path):
+            raise ConfigSchemaError("task.landmarks_path must be a non-empty string when provided.")
         if "roles" in task_cfg:
             roles = task_cfg.get("roles")
             if not isinstance(roles, Mapping):
@@ -372,6 +443,9 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
                 map_id = value.get("map_id")
                 if map_id is not None and (not isinstance(map_id, str) or not map_id):
                     raise ConfigSchemaError("task.maps.<agent_id>.map_id must be a non-empty string when provided.")
+                map_file = value.get("map_file")
+                if map_file is not None and (not isinstance(map_file, str) or not map_file):
+                    raise ConfigSchemaError("task.maps.<agent_id>.map_file must be a non-empty string when provided.")
                 if "landmarks" in value:
                     landmarks = value.get("landmarks")
                     if not isinstance(landmarks, list):

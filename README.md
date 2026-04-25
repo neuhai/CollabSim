@@ -1,51 +1,41 @@
-# CodeRepo_Agent-CollaborationS-imulation
+# CodeRepo_Agent-Collaboration-Simulation
 
-## CLI
-- Validate config only: `python -m src.cli path/to/config.yml --validate-only`
-- Probe templates: `python -m src.cli path/to/config.yml --probe-templates configs/probe_templates.yml` (defaults to `configs/probe_templates.yml`)
-- Accumulator example: `python -m src.cli configs/accumulator_example.yml --run-id accumulator_v1 --output-dir experiments/accumulator_v1`
-- ShapeFactory example: `python -m src.cli configs/shapefactory_example.yml --run-id shapefactory_v1 --output-dir experiments/shapefactory_v1`
-- DayTrader example: `python -m src.cli configs/daytrader_example.yml --run-id daytrader_v1 --output-dir experiments/daytrader_v1`
-- MapTask example: `python -m src.cli configs/maptask_example.yml --run-id maptask_v1 --output-dir experiments/maptask_v1`
-- MapTask print actions example: `python -m src.cli configs/maptask_example.yml --run-id maptask_v1 --output-dir experiments/maptask_v1 --print-actions`
-- Config schema: versioning is tracked via `trace_schema_version`
-- Validate-only note: `--validate-only` skips controller execution and log writing
-- Run with logs: `python -m src.cli path/to/config.yml --run-id r1 --output-dir experiments/r1`
-- Override manifest path: `python -m src.cli path/to/config.yml --run-id r1 --output-dir experiments/r1 --manifest-path experiments/r1/custom_manifest.json`
-- Manifest override note: `--manifest-path` writes the run manifest to a custom path while logs still go to `--output-dir`
-- Manifest override use-case: archive manifests separately from run logs.
-- Manifest constraint: `--manifest-path` cannot be used with `--dry-run`
-- Dry run (no logs): `python -m src.cli path/to/config.yml --run-id r1 --dry-run`
-- Dry run note: `--dry-run` skips writing all run artifacts (events, probes, metrics, manifest)
-- Dry run constraint: `--dry-run` ignores `--output-dir` and does not write logs
-- Output dir/run id: `--output-dir` enables log writing and requires a non-empty `--run-id`
-- Output dir validation: `--output-dir` must point to a writable location
-- Output dir behavior: the directory is created if it does not exist
-- Manifest location: by default `run_manifest.json` is written under `--output-dir`
-- Output files: `events.jsonl`, `probes.jsonl`, `metrics.json`, and `run_manifest.json`
-- Events file: `events.jsonl` stores one event record per line
-- Event schema: versioning is tracked via `trace_schema_version`
-- Probes file: `probes.jsonl` stores one probe record per line
-- Probe schema: versioning is tracked via `trace_schema_version`
-- Probe record fields: `probe_id`, `template_id`, `construct`, `actor_id`, `answer`, `confidence`, `structured_fields`, `timestamp`
-- Manifest fields: `run_id`, `config_hash`, `model_metadata`, `prompt_versions`, `timestamp`, `seeds` (from `experiment.seed` and optional `experiment.seeds`), `trace_schema_version`, `code_version`
-- Manifest schema: versioning is tracked via `trace_schema_version` in logs/manifests
-- Metrics file: `metrics.json` includes per-agent and per-run summaries
-- Metrics schema: versioning is tracked via `trace_schema_version`
-- Metrics scope: per-agent metrics live under `per_agent`, run-level under `per_run`
-- Probe metrics (per_run): `probe_records`, `probe_answered`, `probe_unanswered`, `probe_response_rate`, `probe_confidence_mean`, `probe_construct_<construct>`
-- Probe metrics (per_agent): `probe_records`, `probe_answered`, `probe_unanswered`, `probe_response_rate`, `probe_confidence_mean`, `probe_construct_<construct>`
-- Log naming: logs are written with fixed filenames under `--output-dir`
-- Run id validation: `--run-id` must be a non-empty string
-- Run id usage: `--run-id` is recorded in the run manifest for traceability
-- Max steps: `--max-steps` controls the number of controller steps to execute
+## Setup
 
-## GUI (Optional)
-- Install deps: `pip install -r requirements.txt`
-- Start server: `python -m src.gui.app`
-- Custom port: `PORT=5050 python -m src.gui.app`
-- Open: `http://127.0.0.1:5000`
-- Upload a config YAML or select a preset under `configs/`.
-- Or paste YAML into the built-in editor (takes priority).
-- Configure run id/output dir/max steps/probe templates/manifest path.
-- View agent inputs/outputs, interviews, metrics, and export artifacts as zip.
+```bash
+pip install -r requirements.txt
+```
+
+## Experiments (4)
+
+### 1) ShapeFactory
+
+```bash
+python -m src.cli configs/shapefactory_time_mode_example.yml --print-actions
+```
+
+### 2) MapTask
+
+Formal run:
+
+```bash
+python -m src.cli configs/maptask_example.yml --print-actions
+```
+
+Debug run:
+
+```bash
+python -m src.cli configs/maptask_example.yml --max-steps 3 --dry-run --print-actions
+```
+
+### 3) DayTrader
+
+```bash
+python -m src.cli configs/daytrader_example.yml --print-actions
+```
+
+### 4) Hidden Profile
+
+```bash
+python -m src.cli configs/hidden_profile_example.yml --print-actions
+```

@@ -2,6 +2,13 @@
 - Participant will engage in a group chat to determine a best candidate from the candidate pool.
 - Each participant is required to independently vote for the top-ranked participant both before and after the discussion period.
 - Members of a political caucus rarely have identical sets of information about a candidate, and in the interest of realism, they likewise would not receive exactly the same information as their fellow group members
+- Hidden-profile action phases are strict:
+  - Initial phase: only one `decide` action with `decision_id = "initial_vote"`.
+  - Discussion phase: only `communicate` actions.
+  - Final phase: only one `decide` action with `decision_id = "final_vote"`.
+- During discussion, both direct and broadcast communication are allowed.
+- For both vote actions, set `choice` to the selected candidate name.
+- Do not skip initial vote; final vote is not valid before initial vote.
 
 <INSTRUCTIONS ON ALIGNING WITH HUMAN BEHAVIORS>
 - Your generated message should be based on previous discussion.

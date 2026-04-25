@@ -1,7 +1,7 @@
 experiment:
   id: "shapefactory_time_v1"
   seed: 42
-  duration_sec: 15
+  duration_sec: 300
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -65,7 +65,6 @@ task:
   min_trade_price: 15
   max_trade_price: 100
   incentive_money: 60
-  production_time: 2
   max_production_num: 3
   shapes_order: 4
   shapes_types: 3
@@ -79,18 +78,12 @@ task:
 protocol:
   turn_taking: "simultaneous"
   step_mode: "time"
+  agent_trigger_interval_sec: 20
+  produce_shape_delay_sec: 10
   termination:
-    condition: "max_steps"
-  proactive_wakeup_interval_ms: 1000
+    condition: "time_elapsed"
+    noop_consecutive_cycles: 3
   max_concurrent_requests: 4
-  action_durations_ms:
-    communicate: 120
-    produce_shape: 2000
-    propose_trade_offer: 180
-    trade_response: 150
-    cancel_trade_offer: 120
-    fulfill_order: 600
-    do_nothing: 0
   memory_turn_limit: 7
 
 probe:

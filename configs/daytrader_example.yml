@@ -1,7 +1,7 @@
 experiment:
   id: "daytrader_v1"
   seed: 17
-  max_steps: 10
+  duration_sec: 180
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -18,13 +18,13 @@ agents:
   - id: "A"
     role: "investor"
     model:
-      provider: "azure_openai"
+      provider: "azure"
       name: "gpt-5.3-codex"
       temperature: 0.0
   - id: "B"
     role: "investor"
     model:
-      provider: "azure_openai"
+      provider: "azure"
       name: "gpt-5.3-codex"
       temperature: 0.0
 
@@ -33,22 +33,25 @@ action_space:
 
 controls:
   communication:
-    mode: "broadcast"
     max_messages_per_turn: 1
 
 task:
   type: "daytrader"
-  target_steps: 8
+  target_rounds: 10
   starting_money: 200
   min_trade_price: 15
   max_trade_price: 100
   incentive_money: 60
+  phase_rules:
+    group_chat_max_turns: 6
 
 protocol:
   turn_taking: "simultaneous"
-  step_mode: "event"
+  step_mode: "time"
   termination:
-    condition: "max_steps"
+    condition: "time_elapsed"
+    noop_consecutive_cycles: 3
+  max_concurrent_requests: 4
   memory_turn_limit: 7
 
 probe:
