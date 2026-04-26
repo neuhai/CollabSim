@@ -1,7 +1,6 @@
 experiment:
   id: "daytrader_v1"
   seed: 17
-  duration_sec: 180
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -37,7 +36,7 @@ controls:
 
 task:
   type: "daytrader"
-  target_rounds: 10
+  target_rounds: 3
   starting_money: 200
   min_trade_price: 15
   max_trade_price: 100
@@ -49,8 +48,7 @@ protocol:
   turn_taking: "simultaneous"
   step_mode: "time"
   termination:
-    condition: "time_elapsed"
-    noop_consecutive_cycles: 3
+    condition: "task_complete"
   max_concurrent_requests: 4
   memory_turn_limit: 7
 

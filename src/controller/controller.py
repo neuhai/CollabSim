@@ -233,10 +233,8 @@ class ExperimentController:
 
     def _run_time_mode(self, max_steps: int | None = None) -> None:
         duration_sec = self._duration_seconds()
-        allow_unbounded_hidden_profile = (
-            self._task_type() == "hidden_profile" and self._termination_condition() == "task_complete"
-        )
-        if duration_sec <= 0 and not allow_unbounded_hidden_profile:
+        allow_unbounded_task_complete = self._termination_condition() == "task_complete"
+        if duration_sec <= 0 and not allow_unbounded_task_complete:
             raise ValueError("experiment.duration_sec or experiment.duration_ms must be a positive number for time mode.")
         interval_sec = self._agent_trigger_interval_sec()
         if interval_sec <= 0:
@@ -919,6 +917,8 @@ class ExperimentController:
                 config_steps = experiment.get("max_steps")
                 if isinstance(config_steps, int) and config_steps > 0:
                     return config_steps
+        if self._termination_condition() == "task_complete":
+            return 2_147_483_647
         raise ValueError("max_steps must be provided when config.experiment.max_steps is missing.")
 
     def _reset_agents(self) -> None:
@@ -1103,6 +1103,8 @@ class ExperimentController:
 
         for actor_id, action in validated_actions:
             self._apply_action(action, actor_id)
+            self._advance_daytrader_phase_from_action(actor_id, action)
+        self._sync_daytrader_round_phase()
         had_non_noop = any(action.get("type") != "do_nothing" for _, action in validated_actions)
         return bool(validated_actions), had_non_noop
 
@@ -3198,18 +3200,11 @@ class ExperimentController:
             turns = 0
         turns += 1
         task_state["group_chat_turns"] = turns
-        action_type = action.get("type")
-        silent_raw = task_state.get("group_chat_silent_agents")
-        silent_agents: set[str] = {
-            item for item in silent_raw if isinstance(item, str) and item
-        } if isinstance(silent_raw, list) else set()
-        if action_type == "do_nothing":
-            if isinstance(actor_id, str) and actor_id:
-                silent_agents.add(actor_id)
-        else:
-            silent_agents.clear()
-        task_state["group_chat_silent_agents"] = sorted(silent_agents)
-        if len(silent_agents) < len(agent_ids) and turns < self._daytrader_group_chat_max_turns():
+        group_chat_pending = any(
+            isinstance(entry, dict) and entry.get("daytrader_phase_lock") == "group_chat"
+            for entry in self._pending_realtime_message_queue
+        )
+        if group_chat_pending and turns < self._daytrader_group_chat_max_turns():
             return
         round_index = task_state.get("round_index", 1)
         if not isinstance(round_index, int) or round_index <= 0:
