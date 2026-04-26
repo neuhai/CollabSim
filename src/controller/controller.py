@@ -186,8 +186,6 @@ class ExperimentController:
         termination_condition = self._termination_condition()
         if self._step_mode() == "event":
             self._schedule_context_updates()
-            noop_streak = 0
-            noop_limit = self._noop_consecutive_cycles()
             while self.state.step_index < resolved_max_steps:
                 if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
                     break
@@ -198,13 +196,6 @@ class ExperimentController:
                 ):
                     break
                 self.step()
-                all_noop = self.state.turn_state.get("all_actions_do_nothing") is True
-                if all_noop:
-                    noop_streak += 1
-                else:
-                    noop_streak = 0
-                if noop_limit > 0 and noop_streak >= noop_limit:
-                    break
         else:
             while self.state.step_index < resolved_max_steps:
                 if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
@@ -263,13 +254,14 @@ class ExperimentController:
             self._wall_start_monotonic + duration_sec if duration_sec > 0 else float("inf")
         )
         next_cycle_at = self._wall_start_monotonic
-        noop_streak_by_agent: dict[str, int] = {}
-        noop_limit = self._noop_consecutive_cycles()
         delayed_actions: list[tuple[float, str, dict[str, Any]]] = []
         agent_ids = [agent_id for agent_id in self.state.agents.keys() if isinstance(agent_id, str) and agent_id]
         previous_hidden_profile_phase: str | None = None
         previous_daytrader_phase: str | None = None
         daytrader_decision_phase_queried = False
+        hidden_profile_final_vote_queried = False
+        hidden_profile_final_round_done = False
+        hidden_profile_discussion_noop_streak = 0
 
         while True:
             now = time.monotonic()
@@ -280,6 +272,11 @@ class ExperimentController:
                 if phase != previous_hidden_profile_phase:
                     if phase in {"initial", "final"}:
                         next_cycle_at = min(next_cycle_at, now)
+                    if phase == "final":
+                        hidden_profile_final_vote_queried = False
+                        self._pending_realtime_message_queue = []
+                    if phase != "discussion":
+                        hidden_profile_discussion_noop_streak = 0
                 previous_hidden_profile_phase = phase
             if self._task_type() == "daytrader":
                 self._sync_daytrader_round_phase()
@@ -301,6 +298,8 @@ class ExperimentController:
             self._process_due_realtime_actions(delayed_actions, now)
             self._flush_logs()
 
+            if hidden_profile_final_round_done:
+                break
             if now >= end_time:
                 break
             if isinstance(max_steps, int) and max_steps > 0 and self.state.step_index >= max_steps:
@@ -345,11 +344,25 @@ class ExperimentController:
                         delayed_actions,
                         daytrader_phase_lock_by_agent=phase_lock_by_agent or None,
                     )
-                    for recipient, action_type in action_types.items():
-                        if action_type == "do_nothing":
-                            noop_streak_by_agent[recipient] = noop_streak_by_agent.get(recipient, 0) + 1
-                        elif isinstance(action_type, str):
-                            noop_streak_by_agent[recipient] = 0
+                    if self._task_type() == "hidden_profile":
+                        phase = self._hidden_profile_phase()
+                        if phase == "discussion":
+                            resolved_actions = [value for value in action_types.values() if isinstance(value, str)]
+                            if resolved_actions and all(value == "do_nothing" for value in resolved_actions):
+                                hidden_profile_discussion_noop_streak += 1
+                            else:
+                                hidden_profile_discussion_noop_streak = 0
+                            if hidden_profile_discussion_noop_streak >= 2:
+                                task_state = self.state.task_state
+                                if isinstance(task_state, dict):
+                                    task_state["discussion_force_final"] = True
+                                    task_state["phase"] = "final"
+                                    task_state["discussion_all_do_nothing_streak"] = 2
+                                self._pending_realtime_message_queue = []
+                                hidden_profile_discussion_noop_streak = 0
+                                next_cycle_at = min(next_cycle_at, now)
+                        else:
+                            hidden_profile_discussion_noop_streak = 0
                     self._flush_logs()
                     continue
 
@@ -361,31 +374,50 @@ class ExperimentController:
                     else:
                         # In group chat, only bootstrap once (A then B) and then rely on message-triggered thinking.
                         should_trigger_cycle = False
+                if self._task_type() == "hidden_profile" and self._hidden_profile_phase() == "final":
+                    should_trigger_cycle = not hidden_profile_final_vote_queried
                 if not should_trigger_cycle:
                     next_cycle_at += interval_sec
                     continue
                 idle_agents = [agent_id for agent_id in sorted(agent_ids) if self._is_agent_idle(agent_id)]
                 cycle_active_agents = len(idle_agents)
+                if self._task_type() == "hidden_profile" and self._hidden_profile_phase() == "final":
+                    # Final vote is a single synchronized round: query everyone once, then end.
+                    if len(idle_agents) < len(agent_ids):
+                        next_cycle_at = min(next_cycle_at + interval_sec, now + 0.25)
+                        continue
+                    self._pending_realtime_message_queue = []
+                    self._trigger_idle_agents_parallel(idle_agents, delayed_actions)
+                    hidden_profile_final_vote_queried = True
+                    self._ensure_hidden_profile_completion()
+                    hidden_profile_final_round_done = True
+                    next_cycle_at += interval_sec
+                    self._flush_logs()
+                    continue
                 action_types = self._trigger_idle_agents_parallel(idle_agents, delayed_actions)
+                if self._task_type() == "hidden_profile":
+                    current_phase = self._hidden_profile_phase()
+                    if current_phase == "discussion":
+                        resolved_actions = [value for value in action_types.values() if isinstance(value, str)]
+                        if resolved_actions and all(value == "do_nothing" for value in resolved_actions):
+                            hidden_profile_discussion_noop_streak += 1
+                        else:
+                            hidden_profile_discussion_noop_streak = 0
+                        if hidden_profile_discussion_noop_streak >= 2:
+                            task_state = self.state.task_state
+                            if isinstance(task_state, dict):
+                                task_state["discussion_force_final"] = True
+                                task_state["phase"] = "final"
+                                task_state["discussion_all_do_nothing_streak"] = 2
+                            self._pending_realtime_message_queue = []
+                            hidden_profile_discussion_noop_streak = 0
+                            next_cycle_at = min(next_cycle_at, now)
+                    else:
+                        hidden_profile_discussion_noop_streak = 0
                 if self._task_type() == "daytrader" and self._daytrader_phase() == "decision":
                     daytrader_decision_phase_queried = True
-                for agent_id, action_type in action_types.items():
-                    if action_type == "do_nothing":
-                        noop_streak_by_agent[agent_id] = noop_streak_by_agent.get(agent_id, 0) + 1
-                    elif isinstance(action_type, str):
-                        noop_streak_by_agent[agent_id] = 0
-                if cycle_active_agents > 0:
-                    for agent_id in agent_ids:
-                        if agent_id not in noop_streak_by_agent:
-                            noop_streak_by_agent[agent_id] = 0
                 next_cycle_at += interval_sec
                 self._flush_logs()
-                if (
-                    noop_limit > 0
-                    and agent_ids
-                    and all(noop_streak_by_agent.get(agent_id, 0) >= noop_limit for agent_id in agent_ids)
-                ):
-                    break
                 continue
 
             earliest_due = min((due for due, _, _ in delayed_actions), default=end_time)
@@ -524,20 +556,6 @@ class ExperimentController:
         if isinstance(value, (int, float)) and float(value) > 0:
             return float(value)
         return 10.0
-
-    def _noop_consecutive_cycles(self) -> int:
-        if not isinstance(self.config, dict):
-            return 3
-        protocol = self.config.get("protocol", {})
-        if not isinstance(protocol, dict):
-            return 3
-        termination = protocol.get("termination", {})
-        if not isinstance(termination, dict):
-            return 3
-        value = termination.get("noop_consecutive_cycles")
-        if isinstance(value, int) and value > 0:
-            return value
-        return 3
 
     def _process_due_realtime_actions(
         self,
@@ -957,7 +975,6 @@ class ExperimentController:
             had_action = True
         if late_had_non_noop:
             had_non_noop_action = True
-        self.state.turn_state["all_actions_do_nothing"] = had_action and not had_non_noop_action
         self._flush_logs()
 
     def _apply_proposal_expiry(self) -> None:
@@ -2555,6 +2572,21 @@ class ExperimentController:
         if action_type == "do_nothing":
             return
 
+    def _ensure_hidden_profile_completion(self) -> None:
+        if self._task_type() != "hidden_profile":
+            return
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        participants = task_state.get("participants")
+        if not isinstance(participants, dict) or not participants:
+            return
+        if all(
+            isinstance(entry, dict) and isinstance(entry.get("final_vote"), str) and entry.get("final_vote")
+            for entry in participants.values()
+        ):
+            task_state["complete"] = True
+
     def _queue_targeted_realtime_triggers(self, action: dict[str, Any], actor_id: str) -> None:
         if self._step_mode() != "time":
             return
@@ -2881,7 +2913,7 @@ class ExperimentController:
         if self._task_type() == "hidden_profile":
             phase = self._hidden_profile_phase()
             if phase in {"initial", "final"}:
-                allowed_actions = [item for item in allowed_actions if item in {"decide", "do_nothing"}]
+                allowed_actions = [item for item in allowed_actions if item in {"decide"}]
                 if "decide" not in allowed_actions:
                     allowed_actions.insert(0, "decide")
             elif phase == "discussion":
@@ -3250,8 +3282,6 @@ class ExperimentController:
         if action_type == "do_nothing":
             if phase == "discussion":
                 return None
-            if phase in {"initial", "final"}:
-                return None
 
         if phase == "discussion":
             if action_type in discussion_actions:
@@ -3260,7 +3290,7 @@ class ExperimentController:
             return f"Discussion phase only allows these actions: {allowed}."
 
         if action_type != "decide" or not isinstance(payload, dict):
-            return "Voting phases only allow decide or do_nothing actions in hidden_profile."
+            return "Voting phases only allow decide actions in hidden_profile."
 
         decision_id = payload.get("decision_id")
         if not isinstance(decision_id, str) or not decision_id:
@@ -3313,8 +3343,14 @@ class ExperimentController:
             isinstance(item, dict) and isinstance(item.get("initial_vote"), str) and item.get("initial_vote")
             for item in participants.values()
         ):
+            task_state["discussion_all_do_nothing_streak"] = 0
+            task_state["discussion_force_final"] = False
             task_state["phase"] = "initial"
             return "initial"
+
+        if task_state.get("discussion_force_final") is True:
+            task_state["phase"] = "final"
+            return "final"
 
         if self._step_mode() != "time":
             target_steps = task_state.get("target_steps")

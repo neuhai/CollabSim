@@ -8,9 +8,9 @@
   - Final phase: only one `decide` action with `decision_id = "final_vote"`.
 - During discussion, both direct and broadcast communication are allowed.
 - Always read `observation.state.task_state.phase` before acting:
-  - if `phase = "initial"` -> output only `decide` with `decision_id = "initial_vote"` (or `do_nothing` if absolutely needed),
+  - if `phase = "initial"` -> output only `decide` with `decision_id = "initial_vote"`,
   - if `phase = "discussion"` -> output only `communicate` (or `do_nothing`),
-  - if `phase = "final"` -> output only `decide` with `decision_id = "final_vote"` (or `do_nothing`).
+  - if `phase = "final"` -> output only `decide` with `decision_id = "final_vote"`.
 - For both vote actions, set `choice` to the selected candidate name.
 - Do not skip initial vote; final vote is not valid before initial vote.
 

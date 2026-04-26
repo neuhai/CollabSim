@@ -74,6 +74,8 @@ def hidden_profile_init_state(config: dict[str, Any]) -> dict[str, Any]:
         "participants": participants,
         "phase": "initial",
         "discussion_started_at_sec": None,
+        "discussion_all_do_nothing_streak": 0,
+        "discussion_force_final": False,
         "phase_rules": {
             "initial_vote_decision_id": initial_vote_decision_id,
             "final_vote_decision_id": final_vote_decision_id,
