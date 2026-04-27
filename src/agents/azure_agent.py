@@ -198,36 +198,65 @@ class AzureOpenAIAgent:
         if not deployment_name:
             raise ValueError("Azure deployment name is required (AZURE_OPENAI_DEPLOYMENT or model.name).")
         api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-        url = (
+        chat_url = (
             f"{endpoint.rstrip('/')}/openai/deployments/{deployment_name}/chat/completions"
             f"?api-version={api_version}"
         )
-        
-        payload: dict[str, Any] = {
+        chat_payload: dict[str, Any] = {
             "messages": [
                 {"role": "user", "content": prompt}
             ],
         }
         if self.metadata.temperature is not None:
-            payload["temperature"] = self.metadata.temperature
+            chat_payload["temperature"] = self.metadata.temperature
         if self.metadata.top_p is not None:
-            payload["top_p"] = self.metadata.top_p
+            chat_payload["top_p"] = self.metadata.top_p
         if self.metadata.max_tokens is not None:
-            payload["max_tokens"] = self.metadata.max_tokens
-        
-        data = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            url,
-            data=data,
+            chat_payload["max_tokens"] = self.metadata.max_tokens
+
+        chat_request = urllib.request.Request(
+            chat_url,
+            data=json.dumps(chat_payload).encode("utf-8"),
             headers={
                 "api-key": api_key,
                 "Content-Type": "application/json",
             },
             method="POST",
         )
-        response_body = _http_post_with_ssl_retry(request, timeout=60)
-        response_payload = json.loads(response_body)
-        return _extract_response_text(response_payload)
+        try:
+            response_body = _http_post_with_ssl_retry(chat_request, timeout=60)
+            response_payload = json.loads(response_body)
+            return _extract_response_text(response_payload)
+        except RuntimeError as exc:
+            # Newer Azure models (e.g. GPT-5 Codex deployments) may reject the
+            # chat/completions operation and require the v1 responses API.
+            if "unsupported" not in str(exc).lower():
+                raise
+
+        responses_url = f"{endpoint.rstrip('/')}/openai/v1/responses"
+        responses_payload: dict[str, Any] = {
+            "model": deployment_name,
+            "input": prompt,
+        }
+        if self.metadata.temperature is not None:
+            responses_payload["temperature"] = self.metadata.temperature
+        if self.metadata.top_p is not None:
+            responses_payload["top_p"] = self.metadata.top_p
+        if self.metadata.max_tokens is not None:
+            # v1 Responses uses max_output_tokens.
+            responses_payload["max_output_tokens"] = self.metadata.max_tokens
+        responses_request = urllib.request.Request(
+            responses_url,
+            data=json.dumps(responses_payload).encode("utf-8"),
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        responses_body = _http_post_with_ssl_retry(responses_request, timeout=60)
+        responses_payload_json = json.loads(responses_body)
+        return _extract_responses_v1_text(responses_payload_json)
 
     def _fallback_action(self) -> dict[str, Any]:
         if "do_nothing" in self.allowed_actions:
@@ -389,6 +418,32 @@ def _extract_response_text(payload: dict[str, Any]) -> str:
     text = payload.get("text")
     if isinstance(text, str):
         return text
+    return json.dumps(payload)
+
+
+def _extract_responses_v1_text(payload: dict[str, Any]) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text:
+        return output_text
+    output = payload.get("output")
+    if isinstance(output, list):
+        parts: list[str] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for chunk in content:
+                if not isinstance(chunk, dict):
+                    continue
+                if chunk.get("type") not in {"output_text", "text"}:
+                    continue
+                text = chunk.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        if parts:
+            return "\n".join(parts)
     return json.dumps(payload)
 
 

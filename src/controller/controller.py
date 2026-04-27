@@ -2048,6 +2048,57 @@ class ExperimentController:
             return False
         return entry.get("role") == "follower"
 
+    def _is_maptask_guider(self, agent_id: str) -> bool:
+        participants = self.state.task_state.get("participants")
+        if not isinstance(participants, dict):
+            return False
+        entry = participants.get(agent_id)
+        if not isinstance(entry, dict):
+            return False
+        return entry.get("role") == "guider"
+
+    def _maptask_canvas_visibility_enabled(self) -> bool:
+        if not isinstance(self.config, dict):
+            return True
+        task_cfg = self.config.get("task", {})
+        if not isinstance(task_cfg, dict) or task_cfg.get("type") != "maptask":
+            return True
+        flag = task_cfg.get("canvas_visibility", True)
+        return flag is not False
+
+    def _apply_maptask_canvas_visibility(self, task_state: dict[str, Any], viewer_id: str) -> dict[str, Any]:
+        if not isinstance(task_state, dict) or task_state.get("task_type") != "maptask":
+            return task_state
+        if self._maptask_canvas_visibility_enabled():
+            return task_state
+        if not self._is_maptask_guider(viewer_id):
+            return task_state
+        participants = task_state.get("participants")
+        if not isinstance(participants, dict):
+            return task_state
+        redacted = copy.deepcopy(task_state)
+        redacted_parts = redacted.get("participants")
+        if not isinstance(redacted_parts, dict):
+            return task_state
+        strip_keys = ("map_progress", "drawn_route_points", "map_working_text", "map_working_grid")
+        for pdata in redacted_parts.values():
+            if not isinstance(pdata, dict):
+                continue
+            if pdata.get("role") != "follower":
+                continue
+            for key in strip_keys:
+                pdata.pop(key, None)
+        return redacted
+
+    def _maptask_public_event_visible_to_agent(self, event: dict[str, Any], agent_id: str) -> bool:
+        if self._task_type() != "maptask":
+            return True
+        if event.get("event_type") != "map_progress_updated":
+            return True
+        if self._maptask_canvas_visibility_enabled():
+            return True
+        return not self._is_maptask_guider(agent_id)
+
     def _resolve_maptask_query_order(self) -> list[str]:
         if not isinstance(self.state.agents, dict):
             return []
@@ -2241,12 +2292,21 @@ class ExperimentController:
         self._apply_visibility_defaults_from_config(agent_id)
         defaults = self._visibility_defaults_for_agent(agent_id)
         if not visibility and not defaults:
+            task_raw = snapshot.get("task_state")
+            if isinstance(task_raw, dict):
+                task_patched = self._apply_private_fact_visibility(task_raw, agent_id)
+                task_patched = self._apply_maptask_canvas_visibility(task_patched, agent_id)
+                task_patched = self._apply_shapefactory_participant_visibility(task_patched, agent_id)
+                if task_patched is not task_raw:
+                    return {**snapshot, "task_state": task_patched}
             return snapshot
         filtered: dict[str, Any] = {}
         for section in ("task_state", "resources", "turn_state", "buffers"):
             section_value = snapshot.get(section, {})
             if section == "task_state" and isinstance(section_value, dict):
                 section_value = self._apply_private_fact_visibility(section_value, agent_id)
+                section_value = self._apply_maptask_canvas_visibility(section_value, agent_id)
+                section_value = self._apply_shapefactory_participant_visibility(section_value, agent_id)
             allowed = visibility.get(section, []) if isinstance(visibility, dict) else []
             if not isinstance(allowed, list) or not allowed:
                 allowed = defaults.get(section, []) if isinstance(defaults, dict) else []
@@ -2263,6 +2323,29 @@ class ExperimentController:
                 filtered[section] = section_value
         filtered["step_index"] = snapshot.get("step_index")
         return filtered
+
+    def _apply_shapefactory_participant_visibility(
+        self, task_state: dict[str, Any], viewer_id: str
+    ) -> dict[str, Any]:
+        """Redact other agents' economic/production state; keep global task fields and peers' specialty."""
+
+        if task_state.get("task_type") != "shapefactory":
+            return task_state
+        participants = task_state.get("participants")
+        if not isinstance(participants, dict):
+            return task_state
+        peer_public = {"specialty"}
+        redacted: dict[str, Any] = {}
+        for pid, row in participants.items():
+            if not isinstance(pid, str) or not isinstance(row, dict):
+                continue
+            if pid == viewer_id:
+                redacted[pid] = copy.deepcopy(row)
+            else:
+                redacted[pid] = {
+                    key: copy.deepcopy(value) for key, value in row.items() if key in peer_public
+                }
+        return {**task_state, "participants": redacted}
 
     def _apply_private_fact_visibility(self, task_state: dict[str, Any], agent_id: str) -> dict[str, Any]:
         if not self._is_asymmetric_visibility():
@@ -2415,7 +2498,12 @@ class ExperimentController:
                 continue
             visibility = event.get("visibility")
             if visibility == "public":
-                visible.append(event)
+                adjusted = self._apply_daytrader_event_visibility(event, agent_id)
+                if not self._maptask_public_event_visible_to_agent(adjusted, agent_id):
+                    continue
+                if not self._shapefactory_public_event_visible_to_agent(adjusted, agent_id):
+                    continue
+                visible.append(adjusted)
                 continue
             if visibility == "private":
                 payload = event.get("payload", {})
@@ -2427,6 +2515,33 @@ class ExperimentController:
                 if event.get("event_type") == "action_rejected" and event.get("actor_id") == agent_id:
                     visible.append(event)
         return visible
+
+    def _shapefactory_public_event_visible_to_agent(self, event: dict[str, Any], agent_id: str) -> bool:
+        if self._task_type() != "shapefactory":
+            return True
+        event_type = event.get("event_type")
+        if event_type not in {"shape_produced", "order_fulfilled"}:
+            return True
+        actor = event.get("actor_id")
+        return actor == agent_id
+
+    def _apply_daytrader_event_visibility(self, event: dict[str, Any], agent_id: str) -> dict[str, Any]:
+        if self._task_type() != "daytrader":
+            return event
+        if event.get("event_type") != "investment_made":
+            return event
+        if event.get("actor_id") == agent_id:
+            return event
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            return event
+        # Other participants' exact investment amount/balance should stay private.
+        redacted_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"invest_price", "money_after"}
+        }
+        return {**event, "payload": redacted_payload}
 
     def _visible_event_window(self, events: list[dict[str, Any]], agent_id: str) -> list[dict[str, Any]]:
         window = None
@@ -3548,6 +3663,13 @@ class ExperimentController:
             return
         new_events = self.state.event_log[self._last_flushed_index :]
         if new_events:
+            validated_actions = [
+                event
+                for event in new_events
+                if isinstance(event, dict) and event.get("event_type") == "action_validated"
+            ]
+            if validated_actions:
+                append_jsonl(self.run_paths.actions_path, validated_actions)
             # For runs that have already produced some events, reload the full
             # in-memory log and write it as a single pretty-printed JSON array.
             # This keeps the on-disk format as JSON (not JSONL) with indentation.

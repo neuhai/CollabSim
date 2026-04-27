@@ -27,6 +27,10 @@ class RunPaths:
         return self.run_dir / "probes.jsonl"
 
     @property
+    def actions_path(self) -> Path:
+        return self.run_dir / "actions.jsonl"
+
+    @property
     def metrics_path(self) -> Path:
         return self.run_dir / "metrics.json"
 

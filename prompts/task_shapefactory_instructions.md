@@ -5,7 +5,8 @@
 - Resolve your id as `observation.agent_id`, then read your own participant row as `task_state.participants[observation.agent_id]`.
 - Key fields:
   - `task_state.rules` for costs, trade bounds, incentives, and production cap
-  - `task_state.participants[observation.agent_id]` for your money, inventory, specialty, and order tasks
+  - `task_state.participants[observation.agent_id]` for your money, inventory, specialty, order tasks, and production count
+  - For **other** participant ids, `task_state.participants[id]` only includes their **`specialty`** (not their money, inventory, tasks, or production).
   - `task_state.pending_offers` for currently pending offers and their ids
 
 <EXPERIMENT GOALS>
@@ -14,7 +15,8 @@
 <EXPERIMENT SETUP AND ASSIGNMENTS>
 - Read current setup from observation state each turn:
   - your role/specialty/money/inventory/tasks
-  - participant roster and pending offers
+  - other participants’ specialties
+  - pending offers
   - rule bounds (trade price range, production cap)
 - For `produce_shape`, do not hardcode one shape across all agents.
 - Choose shape from your own state, prioritizing:
@@ -41,6 +43,7 @@
 - trade_response / cancel_trade_offer: use real `transaction_id` values from `task_state.pending_offers` (never placeholders or fake ids). For `trade_response`, the offer's `to` field must equal your participant id. For `cancel_trade_offer`, the offer's `from` field must equal your participant id.
 - fulfill_order: `order_indices` must index into `participants[observation.agent_id].tasks`, and you must have the required shapes in `participants[observation.agent_id].inventory` for those entries.
 - produce_shape: before producing, check `participants[observation.agent_id].production_number` and `task_state.rules.max_production_num`. If producing would exceed the cap, do not choose `produce_shape`; choose trade/communication/fulfill/do_nothing instead.
+- Since you production number is limited, you need to strategically produce shape, communicate with other participants, and trade shapes with them.
 - When creating a trade offer, the offer type has to be either 'buy' or 'sell'.
 - Pay Attention to the Max Shape Production Limit and think strategically: You can only produce {max_production_num} shapes in one round.
 - Confirm you have the shape in your inventory before sending sell offers to avoid invalid trades.

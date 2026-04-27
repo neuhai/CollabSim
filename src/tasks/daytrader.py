@@ -1,8 +1,9 @@
 """DayTrader task runtime with investment actions."""
 
 # Task audit summary:
-# - Initial state: participants with money + investment_history, rules for min/max trade price,
-#   and target_rounds/steps_taken/complete.
+# - Initial state: participants only exposes public metadata in task_state.
+# - Private balances/history are stored in state.buffers and never shared in task_state.
+# - Rules include min/max trade price and target_rounds/steps_taken/complete.
 # - Supported actions: task-specific make_investment via daytrader_apply_action.
 # - Stop condition: task marks complete when rounds_completed >= target_rounds.
 # - Probing trigger: no task-local trigger; probing cadence is controlled by controller/probe config.
@@ -38,15 +39,13 @@ def daytrader_init_state(config: dict[str, Any]) -> dict[str, Any]:
         agent_id = agent.get("id")
         if not isinstance(agent_id, str) or not agent_id:
             continue
-        participants[agent_id] = {
-            "money": float(starting_money),
-            "investment_history": [],
-        }
+        participants[agent_id] = {}
     participant_ids = sorted(participants.keys())
     return {
         "task_type": "daytrader",
         "target_rounds": target_rounds,
         "target_steps": target_rounds * 2,
+        "starting_money": float(starting_money),
         "steps_taken": 0,
         "rounds_completed": 0,
         "complete": False,
@@ -99,7 +98,26 @@ def daytrader_apply_action(
     participants = task_state.get("participants", {})
     if not isinstance(participants, dict):
         return False
-    me = participants.get(actor_id)
+    if actor_id not in participants:
+        return False
+
+    private_key = "daytrader_private_participants"
+    private_participants = state.buffers.get(private_key)
+    if not isinstance(private_participants, dict):
+        starting_money = task_state.get("starting_money", 200.0)
+        if not isinstance(starting_money, (int, float)):
+            starting_money = 200.0
+        private_participants = {
+            agent_id: {
+                "money": float(starting_money),
+                "investment_history": [],
+            }
+            for agent_id in participants.keys()
+            if isinstance(agent_id, str) and agent_id
+        }
+        state.buffers[private_key] = private_participants
+
+    me = private_participants.get(actor_id)
     if not isinstance(me, dict):
         return False
 
@@ -143,11 +161,12 @@ def daytrader_apply_action(
     emit_event(
         event_type="investment_made",
         actor_id=actor_id,
-        visibility="public",
+        visibility="private",
         payload={
             "invest_price": float(invest_price),
             "invest_decision_type": invest_decision_type,
             "money_after": me["money"],
+            "recipients": [actor_id],
         },
     )
     return True

@@ -40,6 +40,8 @@ controls:
 task:
   type: "maptask"
   target_steps: 10000
+  # When true, the guider's observation includes follower route cells (map_progress events + task state).
+  canvas_visibility: true
   landmarks_path: "maptask_landmarks_cells.yml"
   roles:
     A: "guider"

@@ -171,5 +171,107 @@ class DeterministicReplayTests(unittest.TestCase):
         self.assertEqual(progress.get("y"), 5)
 
 
+def _minimal_maptask_maps() -> dict[str, object]:
+    line = "S.F\n"
+    base: dict[str, object] = {
+        "map_text": line,
+        "map_format": "ascii_txt",
+        "map_rows": 1,
+        "map_cols": 3,
+        "grid": {"rows": 1, "cols": 3},
+        "special_points": {
+            "start": {"cell": [0, 0]},
+            "finish": {"cell": [0, 2]},
+        },
+    }
+    return {"A": dict(base), "B": dict(base)}
+
+
+class MapTaskCanvasVisibilityTests(unittest.TestCase):
+    """Guider observation respects task.canvas_visibility for follower route."""
+
+    def test_guider_observation_hides_route_when_canvas_disabled(self) -> None:
+        config: dict[str, object] = {
+            "experiment": {"id": "maptask_canvas", "seed": 1, "max_steps": 5},
+            "agents": [
+                {"id": "A", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
+                {"id": "B", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
+            ],
+            "action_space": {"enabled": ["update_map_progress"]},
+            "controls": {},
+            "task": {
+                "type": "maptask",
+                "target_steps": 10,
+                "canvas_visibility": False,
+                "roles": {"A": "follower", "B": "guider"},
+                "maps": _minimal_maptask_maps(),
+            },
+            "protocol": {"turn_taking": "simultaneous", "step_mode": "event", "termination": {"condition": "max_steps"}},
+            "probe": {"cadence": "per_action"},
+            "logging": {"trace_schema_version": "v0"},
+        }
+        controller = build_controller(_base_state(), config=config)
+        progress_action = {
+            "type": "update_map_progress",
+            "actor_id": "A",
+            "timestamp": 1,
+            "payload": {
+                "map_progress": {"note": "step1"},
+                "drawn_points": [[0, 1]],
+            },
+        }
+        controller.state.pending_actions.append(copy.deepcopy(progress_action))
+        controller.step()
+        guider_obs = controller._build_observation_for_agent("B")
+        follower_obs = controller._build_observation_for_agent("A")
+        types_g = [e.get("event_type") for e in guider_obs.visible_events]
+        types_f = [e.get("event_type") for e in follower_obs.visible_events]
+        self.assertNotIn("map_progress_updated", types_g)
+        self.assertIn("map_progress_updated", types_f)
+        g_parts = guider_obs.state["task_state"]["participants"]["A"]
+        self.assertNotIn("map_progress", g_parts)
+        self.assertNotIn("drawn_route_points", g_parts)
+        f_parts = follower_obs.state["task_state"]["participants"]["A"]
+        self.assertIn("map_progress", f_parts)
+        self.assertIn("drawn_route_points", f_parts)
+
+    def test_guider_sees_route_when_canvas_enabled_by_default(self) -> None:
+        config: dict[str, object] = {
+            "experiment": {"id": "maptask_canvas_on", "seed": 1, "max_steps": 5},
+            "agents": [
+                {"id": "A", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
+                {"id": "B", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
+            ],
+            "action_space": {"enabled": ["update_map_progress"]},
+            "controls": {},
+            "task": {
+                "type": "maptask",
+                "target_steps": 10,
+                "roles": {"A": "follower", "B": "guider"},
+                "maps": _minimal_maptask_maps(),
+            },
+            "protocol": {"turn_taking": "simultaneous", "step_mode": "event", "termination": {"condition": "max_steps"}},
+            "probe": {"cadence": "per_action"},
+            "logging": {"trace_schema_version": "v0"},
+        }
+        controller = build_controller(_base_state(), config=config)
+        progress_action = {
+            "type": "update_map_progress",
+            "actor_id": "A",
+            "timestamp": 1,
+            "payload": {
+                "map_progress": {"note": "step1"},
+                "drawn_points": [[0, 1]],
+            },
+        }
+        controller.state.pending_actions.append(copy.deepcopy(progress_action))
+        controller.step()
+        guider_obs = controller._build_observation_for_agent("B")
+        types_g = [e.get("event_type") for e in guider_obs.visible_events]
+        self.assertIn("map_progress_updated", types_g)
+        g_parts = guider_obs.state["task_state"]["participants"]["A"]
+        self.assertIn("drawn_route_points", g_parts)
+
+
 if __name__ == "__main__":
     unittest.main()

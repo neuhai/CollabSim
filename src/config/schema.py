@@ -452,6 +452,10 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
                         raise ConfigSchemaError("task.maps.<agent_id>.landmarks must be a list when provided.")
                     if not all(isinstance(item, str) and item for item in landmarks):
                         raise ConfigSchemaError("task.maps.<agent_id>.landmarks must contain non-empty strings.")
+        if "canvas_visibility" in task_cfg:
+            canvas_visibility = task_cfg.get("canvas_visibility")
+            if not isinstance(canvas_visibility, bool):
+                raise ConfigSchemaError("task.canvas_visibility must be a boolean when provided for maptask.")
     controls = config.get("controls", {})
     if isinstance(controls, Mapping):
         communication = controls.get("communication")
