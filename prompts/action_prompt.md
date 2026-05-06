@@ -20,7 +20,8 @@ Action payload references:
 - trade_response: {{"transaction_id":"offer_2_1","response_type":"accept|decline"}}
 - cancel_trade_offer: {{"transaction_id":"offer_2_1"}}
 - fulfill_order: {{"order_indices":[0,1]}}
-- make_investment: {{"invest_price":30,"invest_decision_type":"individual|group"}}
+- make_individual_investment: {{"invest_price":30}}
+- make_group_investment: {{"invest_price":30}}
 - update_map_progress: {{"map_progress":{{"segment":"start_to_bridge","status":"confirmed","drawn_points":[[19,53],[20,53],[21,53]]}}}}
 - do_nothing: {{"reason":"..."}}
 

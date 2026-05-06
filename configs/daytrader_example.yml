@@ -28,7 +28,7 @@ agents:
       temperature: 0.0
 
 action_space:
-  enabled: ["communicate", "make_investment", "do_nothing"]
+  enabled: ["communicate", "make_individual_investment", "make_group_investment", "do_nothing"]
 
 controls:
   communication:

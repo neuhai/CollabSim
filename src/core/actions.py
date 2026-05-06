@@ -28,6 +28,8 @@ ACTION_TYPES: tuple[str, ...] = (
     "cancel_trade_offer",
     "fulfill_order",
     "make_investment",
+    "make_individual_investment",
+    "make_group_investment",
     "update_map_progress",
     "do_nothing",
 )
@@ -80,6 +82,10 @@ def validate_action(action: Mapping[str, Any]) -> None:
         _validate_fulfill_order(payload)
     elif action_type == "make_investment":
         _validate_make_investment(payload)
+    elif action_type == "make_individual_investment":
+        _validate_make_individual_investment(payload)
+    elif action_type == "make_group_investment":
+        _validate_make_group_investment(payload)
     elif action_type == "update_map_progress":
         _validate_update_map_progress(payload)
     elif action_type == "do_nothing":
@@ -194,6 +200,20 @@ def _validate_make_investment(payload: Mapping[str, Any]) -> None:
     invest_decision_type = payload.get("invest_decision_type")
     if invest_decision_type not in ("individual", "group"):
         raise ActionValidationError("make_investment.invest_decision_type must be individual or group.")
+
+
+def _validate_make_individual_investment(payload: Mapping[str, Any]) -> None:
+    _require_fields(payload, ("invest_price",))
+    invest_price = payload.get("invest_price")
+    if not isinstance(invest_price, (int, float)) or float(invest_price) <= 0:
+        raise ActionValidationError("make_individual_investment.invest_price must be a positive number.")
+
+
+def _validate_make_group_investment(payload: Mapping[str, Any]) -> None:
+    _require_fields(payload, ("invest_price",))
+    invest_price = payload.get("invest_price")
+    if not isinstance(invest_price, (int, float)) or float(invest_price) < 0:
+        raise ActionValidationError("make_group_investment.invest_price must be a non-negative number.")
 
 
 def _validate_update_map_progress(payload: Mapping[str, Any]) -> None:
