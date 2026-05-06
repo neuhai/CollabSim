@@ -26,7 +26,6 @@ from src.data.logging import (
     write_run_manifest,
     write_run_summary,
 )
-from src.metrics.metrics import compute_metrics
 from src.probe.probe import ProbeResponse
 from src.probe.registry import ProbeRegistry, ProbeValidationError
 from src.tasks import NOOP_TASK
@@ -3744,14 +3743,36 @@ class ExperimentController:
         if self.run_paths is None:
             return
         task_outcome = self._build_task_outcome()
-        result = compute_metrics(
-            event_log=self.state.event_log,
-            probe_log=self.state.probe_log,
-            task_outcome=task_outcome,
-        )
-        write_metrics(self.run_paths, {"per_agent": result.per_agent, "per_run": result.per_run})
+        # Build run_summary.json first (authoritative result store)
         summary = self._build_run_summary(task_outcome)
         write_run_summary(self.run_paths, summary)
+        # Derive metrics.json from the same in-memory data via analysis module
+        from analysis.trace_parser import Trace
+        from analysis.task_metrics import compute_task_metrics
+        from analysis.probe_analysis import analyze_probes
+        trace = Trace(
+            run_dir=self.run_paths.run_dir,
+            events=list(self.state.event_log),
+            probes=list(self.state.probe_log),
+            manifest={"config": self.config, "run_id": self.run_id or ""},
+            summary=summary,
+        )
+        per_run, per_agent_task = compute_task_metrics(trace)
+        probe_analysis = analyze_probes(trace)
+        # Merge probe stats into per_agent
+        per_agent: dict[str, Any] = {aid: dict(metrics) for aid, metrics in per_agent_task.items()}
+        for agent_id, constructs in probe_analysis.get("per_agent", {}).items():
+            per_agent.setdefault(agent_id, {})
+            for construct, pmetrics in constructs.items():
+                for k, v in pmetrics.items():
+                    if not isinstance(v, dict):
+                        per_agent[agent_id][f"probe_{construct}_{k}"] = v
+        # Merge overall probe stats into per_run
+        for construct in ("grounding", "coordination"):
+            for k, v in probe_analysis.get("overall", {}).get(construct, {}).items():
+                if not isinstance(v, dict):
+                    per_run[f"probe_{construct}_{k}"] = v
+        write_metrics(self.run_paths, {"per_agent": per_agent, "per_run": per_run})
         if isinstance(task_outcome, dict) and task_outcome.get("task_type") == "maptask":
             score_map_text = task_outcome.get("maptask_score_map_text")
             if isinstance(score_map_text, str) and score_map_text:
