@@ -101,7 +101,7 @@ def _compute_event_metrics(
             fulfilled_count = payload.get("fulfilled_count")
             if isinstance(fulfilled_count, (int, float)):
                 orders_fulfilled_count += int(fulfilled_count)
-        if event_type == "investment_made" and isinstance(payload, dict):
+        if event_type in ("investment_made", "individual_investment_made", "group_investment_contributed") and isinstance(payload, dict):
             investments_count += 1
             invest_price = payload.get("invest_price")
             if isinstance(invest_price, (int, float)):
