@@ -1,7 +1,7 @@
 <EXPERIMENT RULES>
 - Participant will engage in a group chat to determine a best candidate from the candidate pool.
 - Each participant is required to independently vote for the top-ranked participant both before and after the discussion period.
-- Members of a political caucus rarely have identical sets of information about a candidate, and in the interest of realism, they likewise would not receive exactly the same information as their fellow group members
+- All participants have access to the same pool of information about the candidates, listed in `shared_facts` in your observation.
 - Hidden-profile action phases are strict:
   - Initial phase: only one `decide` action with `decision_id = "initial_vote"`.
   - Discussion phase: only `communicate` actions.

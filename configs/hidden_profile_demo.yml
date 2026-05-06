@@ -30,7 +30,7 @@ controls:
   information_distribution:
     visibility: "asymmetric"
   visibility_defaults:
-    task_state: ["shared_facts", "private_facts", "target_steps", "steps_taken", "complete"]
+    task_state: ["shared_facts", "target_steps", "steps_taken", "complete"]
     resources: ["*"]
     turn_state: ["*"]
     buffers: ["*"]

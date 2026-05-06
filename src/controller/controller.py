@@ -29,6 +29,7 @@ from src.metrics.metrics import compute_metrics
 from src.probe.probe import ProbeResponse
 from src.probe.registry import ProbeRegistry, ProbeValidationError
 from src.tasks import NOOP_TASK
+from src.tasks.daytrader import daytrader_settle_group_pool
 from src.tasks.registry import TaskRegistry
 from src.utils.env import load_text_file
 
@@ -2355,10 +2356,12 @@ class ExperimentController:
             return task_state
         if agent_id not in private_facts:
             return task_state
-        return {
-            **task_state,
-            "private_facts": {agent_id: private_facts.get(agent_id)},
-        }
+        agent_facts = private_facts.get(agent_id)
+        existing = task_state.get("shared_facts", [])
+        merged = list(existing) + (agent_facts if isinstance(agent_facts, list) else [])
+        patched = {k: v for k, v in task_state.items() if k not in ("private_facts", "shared_facts")}
+        patched["shared_facts"] = merged
+        return patched
 
     def _is_asymmetric_visibility(self) -> bool:
         if not isinstance(self.config, dict):
@@ -3151,7 +3154,7 @@ class ExperimentController:
         action_type = action.get("type")
         phase = self._daytrader_phase_for_action(action)
         if phase == "decision":
-            allowed = {"make_investment", "do_nothing"}
+            allowed = {"make_individual_investment", "make_group_investment", "do_nothing"}
             if action_type in allowed:
                 return None
             allowed_text = ", ".join(sorted(allowed))
@@ -3299,6 +3302,7 @@ class ExperimentController:
             task_state["decision_pending_agents"] = sorted(pending)
             if pending:
                 return
+            daytrader_settle_group_pool(self.state, self._emit_event)
             task_state["phase"] = "group_chat"
             task_state["phase_step_in_round"] = 2
             task_state["group_chat_turns"] = 0

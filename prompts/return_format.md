@@ -12,7 +12,8 @@ Allowed payload examples:
 - trade_response: {"transaction_id":"offer_1_1","response_type":"accept"}
 - cancel_trade_offer: {"transaction_id":"offer_1_1"}
 - fulfill_order: {"order_indices":[0]}
-- make_investment: {"invest_price":40,"invest_decision_type":"individual"}
+- make_individual_investment: {"invest_price":40}
+- make_group_investment: {"invest_price":40}
 - update_map_progress: {"map_progress":{"segment":"bridge_to_tower","status":"done","drawn_points":[[21,53],[21,52],[21,51]]}}
 - do_nothing: {"reason":"No valid high-value move this turn."}
 
