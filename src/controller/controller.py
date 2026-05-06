@@ -185,6 +185,8 @@ class ExperimentController:
         resolved_max_steps = self._resolve_max_steps(max_steps)
         self._reset_agents()
         termination_condition = self._termination_condition()
+        noop_cycle_target = self._noop_consecutive_cycles_target()
+        noop_cycle_streak = 0
         if self._step_mode() == "event":
             self._schedule_context_updates()
             while self.state.step_index < resolved_max_steps:
@@ -197,11 +199,25 @@ class ExperimentController:
                 ):
                     break
                 self.step()
+                if noop_cycle_target is not None:
+                    if self.state.turn_state.pop("_all_agents_noop_cycle", False) is True:
+                        noop_cycle_streak += 1
+                    else:
+                        noop_cycle_streak = 0
+                    if noop_cycle_streak >= noop_cycle_target:
+                        break
         else:
             while self.state.step_index < resolved_max_steps:
                 if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
                     break
                 self.step()
+                if noop_cycle_target is not None:
+                    if self.state.turn_state.pop("_all_agents_noop_cycle", False) is True:
+                        noop_cycle_streak += 1
+                    else:
+                        noop_cycle_streak = 0
+                    if noop_cycle_streak >= noop_cycle_target:
+                        break
         self._export_metrics()
         self._flush_logs()
         self._write_manifest()
@@ -220,6 +236,20 @@ class ExperimentController:
         if isinstance(condition, str) and condition:
             return condition
         return "task_complete"
+
+    def _noop_consecutive_cycles_target(self) -> int | None:
+        if not isinstance(self.config, dict):
+            return None
+        protocol = self.config.get("protocol", {})
+        if not isinstance(protocol, dict):
+            return None
+        termination = protocol.get("termination", {})
+        if not isinstance(termination, dict):
+            return None
+        value = termination.get("noop_consecutive_cycles")
+        if isinstance(value, int) and value > 0:
+            return value
+        return None
 
     def _step_mode(self) -> str:
         if not isinstance(self.config, dict):
@@ -970,6 +1000,8 @@ class ExperimentController:
         self._maybe_log_probe(had_action)
         self._schedule_context_updates()
         self._process_context_updates()
+        if "_all_agents_noop_cycle" not in self.state.turn_state:
+            self.state.turn_state["_all_agents_noop_cycle"] = False
         late_had_action = self.state.turn_state.pop("_had_action_in_context_updates", False) is True
         late_had_non_noop = self.state.turn_state.pop("_had_non_noop_in_context_updates", False) is True
         if late_had_action:
@@ -1949,6 +1981,9 @@ class ExperimentController:
         pending = dict(self.state.pending_context_updates)
         if self._uses_maptask_event_pipeline():
             agent_ids = self._resolve_maptask_query_order()
+            cycle_agents: list[str] = []
+            actor_has_action: dict[str, bool] = {}
+            actor_has_non_noop_action: dict[str, bool] = {}
             had_action_in_context = False
             had_non_noop_in_context = False
             validated_actions_for_probe: list[tuple[str, dict[str, Any]]] = []
@@ -1958,12 +1993,17 @@ class ExperimentController:
                     continue
                 if not self._is_agent_idle(agent_id):
                     continue
+                cycle_agents.append(agent_id)
                 self.state.pending_context_updates.pop(agent_id, None)
                 self._context_update_agent(agent_id)
                 self.state.last_context_hash[agent_id] = pending[agent_id].get("signature", "")
                 context_had_action, context_had_non_noop, validated_actions, rejected_actors = (
                     self._drain_pending_actions_for_maptask_event()
                 )
+                for action_actor_id, action in validated_actions:
+                    actor_has_action[action_actor_id] = True
+                    if isinstance(action, dict) and action.get("type") != "do_nothing":
+                        actor_has_non_noop_action[action_actor_id] = True
                 had_action_in_context = had_action_in_context or context_had_action
                 had_non_noop_in_context = had_non_noop_in_context or context_had_non_noop
                 validated_actions_for_probe.extend(validated_actions)
@@ -1978,10 +2018,19 @@ class ExperimentController:
                     retry_had_action, retry_had_non_noop, retry_validated_actions, _ = (
                         self._drain_pending_actions_for_maptask_event()
                     )
+                    for action_actor_id, action in retry_validated_actions:
+                        actor_has_action[action_actor_id] = True
+                        if isinstance(action, dict) and action.get("type") != "do_nothing":
+                            actor_has_non_noop_action[action_actor_id] = True
                     had_action_in_context = had_action_in_context or retry_had_action
                     had_non_noop_in_context = had_non_noop_in_context or retry_had_non_noop
                     validated_actions_for_probe.extend(retry_validated_actions)
             self._maybe_probe_after_validated_actions_event(validated_actions_for_probe)
+            all_agents_noop_cycle = bool(cycle_agents) and all(
+                actor_has_action.get(agent_id, False) and not actor_has_non_noop_action.get(agent_id, False)
+                for agent_id in cycle_agents
+            )
+            self.state.turn_state["_all_agents_noop_cycle"] = all_agents_noop_cycle
             self.state.turn_state["_had_action_in_context_updates"] = had_action_in_context
             self.state.turn_state["_had_non_noop_in_context_updates"] = had_non_noop_in_context
             return
@@ -2772,11 +2821,10 @@ class ExperimentController:
             entries.append({"actor_id": actor_id, "choice": choice})
         if reveal == "sequential":
             ordered = self._sorted_decision_choices(entries)
-            self._emit_event(
-                event_type="decision_revealed",
+            self._emit_decision_revealed(
                 actor_id=actor_id,
-                visibility="public",
-                payload={"decision_id": decision_id, "choices": ordered},
+                decision_id=decision_id,
+                choices=ordered,
             )
             buffer_store.pop(decision_id, None)
             meta_store.pop(decision_id, None)
@@ -2788,11 +2836,10 @@ class ExperimentController:
             }
         if reveal in ("aggregated", "simultaneous") and self._should_reveal_decision(entries, reveal):
             ordered = self._sorted_decision_choices(entries)
-            self._emit_event(
-                event_type="decision_revealed",
+            self._emit_decision_revealed(
                 actor_id=actor_id,
-                visibility="public",
-                payload={"decision_id": decision_id, "choices": ordered},
+                decision_id=decision_id,
+                choices=ordered,
             )
             buffer_store.pop(decision_id, None)
             meta_store.pop(decision_id, None)
@@ -2829,14 +2876,24 @@ class ExperimentController:
                 visibility="system",
                 payload={"decision_id": decision_id},
             )
-            self._emit_event(
-                event_type="decision_revealed",
+            self._emit_decision_revealed(
                 actor_id="system",
-                visibility="public",
-                payload={"decision_id": decision_id, "choices": self._sorted_decision_choices(entries)},
+                decision_id=decision_id,
+                choices=self._sorted_decision_choices(entries),
             )
             decisions.pop(decision_id, None)
             meta_store.pop(decision_id, None)
+
+    def _emit_decision_revealed(self, actor_id: str, decision_id: str, choices: list[dict[str, Any]]) -> None:
+        # Hidden Profile voting outcomes are intentionally kept out of public event streams.
+        if self._task_type() == "hidden_profile":
+            return
+        self._emit_event(
+            event_type="decision_revealed",
+            actor_id=actor_id,
+            visibility="public",
+            payload={"decision_id": decision_id, "choices": choices},
+        )
 
     def _apply_communicate_action(self, actor_id: str, payload: dict[str, Any]) -> None:
         channel = payload.get("channel")

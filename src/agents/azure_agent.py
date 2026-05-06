@@ -54,6 +54,9 @@ class AzureOpenAIAgent:
         prompt = self._build_action_prompt(observation)
         text = self._call_azure_openai(prompt)
         parsed = _parse_json(text)
+        if not parsed:
+            action = self._fallback_action("parse_failure")
+            return ActionProposal(action=action, rationale="Model output was not valid JSON.")
         rationale = parsed.get("rationale") if isinstance(parsed, dict) else None
         if isinstance(parsed, dict):
             raw_actions = parsed.get("actions")
@@ -67,6 +70,9 @@ class AzureOpenAIAgent:
                         "rationale": rationale if isinstance(rationale, str) else None,
                     }
         action = parsed.get("action") if isinstance(parsed, dict) else None
+        if not isinstance(action, dict):
+            fallback = self._fallback_action("missing_action")
+            return ActionProposal(action=fallback, rationale=rationale if isinstance(rationale, str) else "No action field in JSON.")
         action = self._normalize_action(action)
         return ActionProposal(action=action, rationale=rationale if isinstance(rationale, str) else None)
 
@@ -97,15 +103,19 @@ class AzureOpenAIAgent:
     def _build_action_prompt(self, observation: Observation) -> str:
         allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
         decide_reveal = self.decide_reveal or "aggregated"
-        observation_json = json.dumps(
-            {
-                "agent_id": self.metadata.agent_id,
-                "state": observation.state,
-                "visible_events": observation.visible_events,
-                "memory": observation.memory,
-            },
-            ensure_ascii=False,
-        )
+        observation_payload = {
+            "agent_id": self.metadata.agent_id,
+            "state": observation.state,
+            "visible_events": observation.visible_events,
+            "memory": observation.memory,
+        }
+        observation_json = json.dumps(observation_payload, ensure_ascii=False)
+        task_type = _task_type_from_observation(observation)
+        observation_rendered = observation_json
+        observation_label = "Observation"
+        if task_type == "shapefactory":
+            observation_rendered = _summarize_shapefactory_observation(observation_payload)
+            observation_label = "Observation Summary"
         persona_profile = self.persona_profile or "Default collaborative persona."
         persona_prompt = _render_template(self.persona_prompt_template, {"persona_profile": persona_profile})
         protocol_prompt = _render_template(
@@ -118,7 +128,7 @@ class AzureOpenAIAgent:
             self.action_prompt_template,
             {
                 "allowed_actions": allowed,
-                "observation_json": observation_json,
+                "observation_json": observation_rendered,
                 "decide_reveal": decide_reveal,
             },
         )
@@ -129,10 +139,107 @@ class AzureOpenAIAgent:
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
             f"{action_space_prompt}\n\n"
-            f"Observation:\n{observation_json}\n\n"
+            f"{observation_label}:\n{observation_rendered}\n\n"
             f"{return_format_prompt}\n\n"
             f"{action_prompt}"
         )
+
+    def _fallback_action(self, reason_code: str = "default") -> dict[str, Any]:
+        if "do_nothing" in self.allowed_actions:
+            reason_map = {
+                "parse_failure": "fallback: parse_failure",
+                "missing_action": "fallback: missing_action",
+                "normalize_failure": "fallback: normalize_failure",
+                "default": "fallback: default",
+            }
+            return {"type": "do_nothing", "payload": {"reason": reason_map.get(reason_code, "fallback: default")}}
+        if "communicate" in self.allowed_actions:
+            return {
+                "type": "communicate",
+                "payload": {
+                    "channel": "broadcast",
+                    "content": "Unable to parse model output; defaulting to status update.",
+                    "content_type": "text",
+                },
+            }
+        return {
+            "type": "decide",
+            "payload": {"decision_id": "default_decision", "choice": "option_A"},
+        }
+
+    def _normalize_action(self, action: Any) -> dict[str, Any]:
+        if not isinstance(action, dict):
+            return self._fallback_action("normalize_failure")
+        action_type = action.get("type")
+        payload = action.get("payload")
+        if not isinstance(payload, dict):
+            payload = {}
+        if not isinstance(action_type, str):
+            action_type = None
+
+        if action_type is None:
+            if "message" in payload or "content" in payload:
+                action_type = "communicate"
+            elif "decision" in payload or "choice" in payload or "plan" in payload:
+                action_type = "decide"
+            elif "do_nothing" in self.allowed_actions:
+                action_type = "do_nothing"
+
+        if action_type == "communicate":
+            content = payload.get("content")
+            if not isinstance(content, str) or not content:
+                message = payload.get("message")
+                content = message if isinstance(message, str) and message else "Status update."
+            channel = payload.get("channel")
+            if channel not in ("broadcast", "direct"):
+                channel = "broadcast"
+            content_type = payload.get("content_type")
+            if content_type not in ("text", "json"):
+                content_type = "text"
+            normalized = {
+                "type": "communicate",
+                "payload": {
+                    "channel": channel,
+                    "content": content,
+                    "content_type": content_type,
+                },
+            }
+            recipients = payload.get("recipients")
+            if channel == "direct" and isinstance(recipients, list):
+                normalized["payload"]["recipients"] = recipients
+            return normalized
+
+        if action_type == "decide":
+            decision_id = payload.get("decision_id")
+            if not isinstance(decision_id, str) or not decision_id:
+                decision_id = "plan_selection"
+            choice = payload.get("choice")
+            if not isinstance(choice, str) or not choice:
+                choice = payload.get("decision") or payload.get("plan")
+            if not isinstance(choice, str) or not choice:
+                choice = "undecided"
+            normalized_payload = {
+                "decision_id": decision_id,
+                "choice": choice,
+            }
+            if self.decide_reveal:
+                normalized_payload["reveal"] = self.decide_reveal
+            return {"type": "decide", "payload": normalized_payload}
+
+        if isinstance(action_type, str) and action_type in self.allowed_actions:
+            return {"type": action_type, "payload": payload}
+
+        return self._fallback_action()
+
+    def _normalize_actions(self, actions: Any) -> list[dict[str, Any]]:
+        if not isinstance(actions, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            normalized.append(self._normalize_action(action))
+        return normalized
 
     def _build_probe_prompt(
         self,
@@ -259,99 +366,6 @@ class AzureOpenAIAgent:
         responses_payload_json = json.loads(responses_body)
         return _extract_responses_v1_text(responses_payload_json)
 
-    def _fallback_action(self) -> dict[str, Any]:
-        if "do_nothing" in self.allowed_actions:
-            return {"type": "do_nothing", "payload": {"reason": "No action needed."}}
-        if "communicate" in self.allowed_actions:
-            return {
-                "type": "communicate",
-                "payload": {
-                    "channel": "broadcast",
-                    "content": "Unable to parse model output; defaulting to status update.",
-                    "content_type": "text",
-                },
-            }
-        return {
-            "type": "decide",
-            "payload": {"decision_id": "default_decision", "choice": "option_A"},
-        }
-
-    def _normalize_action(self, action: Any) -> dict[str, Any]:
-        if not isinstance(action, dict):
-            return self._fallback_action()
-        action_type = action.get("type")
-        payload = action.get("payload")
-        if not isinstance(payload, dict):
-            payload = {}
-        if not isinstance(action_type, str):
-            action_type = None
-
-        if action_type is None:
-            if "message" in payload or "content" in payload:
-                action_type = "communicate"
-            elif "decision" in payload or "choice" in payload or "plan" in payload:
-                action_type = "decide"
-            elif "do_nothing" in self.allowed_actions:
-                action_type = "do_nothing"
-
-        if action_type == "communicate":
-            content = payload.get("content")
-            if not isinstance(content, str) or not content:
-                message = payload.get("message")
-                content = message if isinstance(message, str) and message else "Status update."
-            channel = payload.get("channel")
-            if channel not in ("broadcast", "direct"):
-                channel = "broadcast"
-            content_type = payload.get("content_type")
-            if content_type not in ("text", "json"):
-                content_type = "text"
-            normalized = {
-                "type": "communicate",
-                "payload": {
-                    "channel": channel,
-                    "content": content,
-                    "content_type": content_type,
-                },
-            }
-            recipients = payload.get("recipients")
-            if channel == "direct" and isinstance(recipients, list):
-                normalized["payload"]["recipients"] = recipients
-            return normalized
-
-        if action_type == "decide":
-            decision_id = payload.get("decision_id")
-            if not isinstance(decision_id, str) or not decision_id:
-                decision_id = "plan_selection"
-            choice = payload.get("choice")
-            if not isinstance(choice, str) or not choice:
-                choice = payload.get("decision") or payload.get("plan")
-            if not isinstance(choice, str) or not choice:
-                choice = "undecided"
-            normalized_payload = {
-                "decision_id": decision_id,
-                "choice": choice,
-            }
-            if self.decide_reveal:
-                normalized_payload["reveal"] = self.decide_reveal
-            return {"type": "decide", "payload": normalized_payload}
-
-        if isinstance(action_type, str) and action_type in self.allowed_actions:
-            # Preserve domain-specific actions when explicitly enabled by config.
-            return {"type": action_type, "payload": payload}
-
-        return self._fallback_action()
-
-    def _normalize_actions(self, actions: Any) -> list[dict[str, Any]]:
-        if not isinstance(actions, list):
-            return []
-        normalized: list[dict[str, Any]] = []
-        for action in actions:
-            if not isinstance(action, dict):
-                continue
-            normalized.append(self._normalize_action(action))
-        return normalized
-
-
 def _azure_ssl_context() -> ssl.SSLContext:
     verify = os.environ.get("AZURE_OPENAI_SSL_VERIFY", "true").strip().lower()
     if verify in ("0", "false", "no"):
@@ -474,3 +488,59 @@ def _render_template(template: str, values: dict[str, str]) -> str:
     for key, value in values.items():
         rendered = rendered.replace(f"{{{key}}}", value)
     return rendered
+
+
+def _task_type_from_observation(observation: Observation) -> str | None:
+    task_state = observation.state.get("task_state") if isinstance(observation.state, dict) else None
+    if not isinstance(task_state, dict):
+        return None
+    task_type = task_state.get("task_type")
+    return task_type if isinstance(task_type, str) and task_type else None
+
+
+def _summarize_shapefactory_observation(payload: dict[str, Any]) -> str:
+    agent_id = payload.get("agent_id")
+    state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+    task_state = state.get("task_state") if isinstance(state.get("task_state"), dict) else {}
+    participants = task_state.get("participants") if isinstance(task_state.get("participants"), dict) else {}
+    self_row = participants.get(agent_id) if isinstance(agent_id, str) else None
+    if not isinstance(self_row, dict):
+        self_row = {}
+    rules = task_state.get("rules") if isinstance(task_state.get("rules"), dict) else {}
+    pending_offers = task_state.get("pending_offers")
+    lines = [f"You are agent {agent_id} in ShapeFactory."]
+    specialty = self_row.get("specialty")
+    if isinstance(specialty, str) and specialty:
+        lines.append(f"Your specialty shape is {specialty}.")
+    money = self_row.get("money")
+    if isinstance(money, (int, float)):
+        lines.append(f"Your money: {money}.")
+    inventory = self_row.get("inventory")
+    if isinstance(inventory, dict):
+        inv_items = ", ".join(f"{k}:{v}" for k, v in sorted(inventory.items()) if isinstance(k, str))
+        lines.append(f"Your inventory: {inv_items or 'empty'}.")
+    tasks = self_row.get("tasks")
+    if isinstance(tasks, list):
+        lines.append(f"Your pending order count: {len(tasks)}.")
+    production_number = self_row.get("production_number")
+    max_production = rules.get("max_production_num")
+    if isinstance(production_number, int) and isinstance(max_production, int):
+        lines.append(f"Production used: {production_number}/{max_production}.")
+    peer_bits: list[str] = []
+    for pid, row in sorted(participants.items()):
+        if not isinstance(pid, str) or pid == agent_id or not isinstance(row, dict):
+            continue
+        peer_specialty = row.get("specialty")
+        if isinstance(peer_specialty, str) and peer_specialty:
+            peer_bits.append(f"{pid}:{peer_specialty}")
+    if peer_bits:
+        lines.append("Other participants (public specialties only): " + ", ".join(peer_bits) + ".")
+    if isinstance(pending_offers, list):
+        lines.append(f"Pending offers in market: {len(pending_offers)}.")
+    recent_events = payload.get("visible_events")
+    if isinstance(recent_events, list) and recent_events:
+        tail = recent_events[-5:]
+        event_types = [str(evt.get("event_type")) for evt in tail if isinstance(evt, dict)]
+        if event_types:
+            lines.append("Recent visible events: " + ", ".join(event_types) + ".")
+    return "\n".join(lines)

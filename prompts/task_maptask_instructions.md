@@ -10,6 +10,8 @@
 - You may return one or multiple actions in `actions` when needed.
 - Order matters for multiple actions (execute in listed order).
 - If you are `guider`, prefer concise directional instructions with landmark references.
+- If you are `guider` and the current reachable branch is exhausted, and the follower did not ask a new clarifying question in recent messages, choose `do_nothing` instead of repeating the same hold/stop instruction.
+- For `guider`, treat a "new question" as a message that asks for a next move, asks to disambiguate direction, or reports a new map change that requires updated guidance.
 - If you are `follower`, decide between:
   - `update_map_progress` when instruction is clear enough to draw safely
   - `communicate` when instruction is ambiguous and you need confirmation
@@ -34,3 +36,4 @@
 <INSTRUCTIONS ON ALIGNING WITH HUMAN BEHAVIORS>
 - Keep communication short and practical.
 - Avoid repetitive messages and avoid emoji.
+- If no new actionable information appears, prefer `do_nothing` over repeating semantically identical messages.

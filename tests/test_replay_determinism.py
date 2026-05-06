@@ -273,5 +273,44 @@ class MapTaskCanvasVisibilityTests(unittest.TestCase):
         self.assertIn("drawn_route_points", g_parts)
 
 
+class HiddenProfileDecisionRevealTests(unittest.TestCase):
+    """Hidden Profile keeps decision reveals out of public event streams."""
+
+    def test_hidden_profile_suppresses_decision_revealed_events(self) -> None:
+        config: dict[str, object] = {
+            "experiment": {"id": "hidden_profile_reveal", "seed": 7, "max_steps": 5},
+            "agents": [
+                {"id": "A", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
+                {"id": "B", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
+            ],
+            "action_space": {"enabled": ["decide"], "decide": {"reveal": "aggregated"}},
+            "controls": {},
+            "task": {
+                "type": "hidden_profile",
+                "shared_facts": ["Candidate A has strong focus."],
+                "private_facts": {"A": ["Candidate B can be impatient."], "B": ["Candidate A can be rigid."]},
+                "phase_rules": {
+                    "initial_vote_decision_id": "initial_vote",
+                    "final_vote_decision_id": "final_vote",
+                    "discussion_action_types": ["communicate"],
+                },
+            },
+            "protocol": {"turn_taking": "simultaneous", "step_mode": "event", "termination": {"condition": "max_steps"}},
+            "probe": {"cadence": "per_action"},
+            "logging": {"trace_schema_version": "v0"},
+        }
+        controller = build_controller(_base_state(), config=config)
+        controller._apply_decision_action(
+            "A",
+            {"decision_id": "initial_vote", "choice": "Candidate A", "reveal": "sequential"},
+        )
+        controller._apply_decision_action(
+            "B",
+            {"decision_id": "initial_vote", "choice": "Candidate B", "reveal": "aggregated"},
+        )
+        event_types = [event.get("event_type") for event in controller.state.event_log]
+        self.assertNotIn("decision_revealed", event_types)
+
+
 if __name__ == "__main__":
     unittest.main()

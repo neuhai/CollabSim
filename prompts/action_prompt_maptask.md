@@ -41,5 +41,6 @@ Important:
 - In maptask `communicate.content`, never describe positions with coordinates (row/col, x/y, cell indices).
 - Use landmark names and relative directions for spatial descriptions.
 - Coordinates are only valid inside `update_map_progress.map_progress.drawn_points`.
+- In maptask guider turns, if the follower did not ask a new question and no new route continuation is available, choose `do_nothing` instead of repeating prior hold/stop wording.
 - **Follower drawing:** Before `update_map_progress`, every `[row,col]` must match `map_text` with that cell **not** `#`, the path must be **4-connected** from `S` or existing route, and the **first** step must be a **legal neighbor of `S`**. Use shorter `drawn_points` lists when unsure.
 - Task-specific action constraints (per `task_type`) are defined in the task instructions block earlier in the prompt, not here.
