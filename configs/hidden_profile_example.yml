@@ -5,10 +5,10 @@ experiment:
 agents:
   - id: "A"
     role: "planner"
-    model: { provider: "azure", name: "gpt-5.3-codex", temperature: 0.0 }
+    model: { provider: "azure_openai", name: "gpt-5.3-codex", temperature: 0.0 }
   - id: "B"
     role: "planner"
-    model: { provider: "azure", name: "gpt-5.3-codex", temperature: 0.0 }
+    model: { provider: "azure_openai", name: "gpt-5.3-codex", temperature: 0.0 }
 prompts:
   task: "prompts/task_hidden_profile_instructions.md"
 action_space:

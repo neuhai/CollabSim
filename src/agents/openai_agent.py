@@ -7,6 +7,7 @@ import json
 from typing import Any
 import urllib.request
 import urllib.error
+from urllib.parse import quote
 
 from src.agents.interface import ActionProposal, AgentMetadata, Observation
 from src.probe.probe import ProbeResponse
@@ -34,8 +35,15 @@ class OpenAIAgent:
 
     def __post_init__(self) -> None:
         load_env_file()
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("OPENAI_API_KEY is required for OpenAIAgent.")
+        provider = (self.metadata.model_provider or "").lower()
+        if provider == "azure_openai":
+            endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+            if not endpoint or not api_key:
+                raise ValueError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY are required for Azure OpenAI.")
+        else:
+            if not os.environ.get("OPENAI_API_KEY"):
+                raise ValueError("OPENAI_API_KEY is required for OpenAIAgent.")
 
     def reset(self, seed: int | None = None) -> None:
         _ = seed
@@ -195,23 +203,46 @@ class OpenAIAgent:
             payload["top_p"] = self.metadata.top_p
         if self.metadata.max_tokens is not None:
             payload["max_output_tokens"] = self.metadata.max_tokens
-        data = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            "https://api.openai.com/v1/responses",
-            data=data,
-            headers={
+        provider = (self.metadata.model_provider or "").lower()
+
+        if provider == "azure_openai":
+            endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+            if not endpoint or not api_key:
+                raise RuntimeError("Azure OpenAI endpoint or API key is missing.")
+            deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT") or self.metadata.model_name
+            payload["model"] = deployment
+            headers = {
+                "api-key": api_key,
+                "Content-Type": "application/json",
+            }
+            versions = _candidate_api_versions(os.environ.get("AZURE_OPENAI_API_VERSION"))
+            urls = _candidate_azure_urls(endpoint, deployment, versions)
+            last_error = ""
+            for url in urls:
+                try:
+                    body = _post_json(url=url, headers=headers, payload=payload)
+                    parsed = json.loads(body)
+                    return _extract_response_text(parsed)
+                except urllib.error.HTTPError as exc:
+                    error_body = exc.read().decode("utf-8")
+                    last_error = f"{exc.code} {error_body}"
+                    if exc.code in (400, 404):
+                        continue
+                    raise RuntimeError(f"OpenAI API error: {error_body}") from exc
+            raise RuntimeError(f"OpenAI API error: {last_error or 'Azure request failed after trying fallback URLs.'}")
+        else:
+            url = "https://api.openai.com/v1/responses"
+            headers = {
                 "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
                 "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                body = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"OpenAI API error: {exc.read().decode('utf-8')}") from exc
-        payload = json.loads(body)
-        return _extract_response_text(payload)
+            }
+            try:
+                body = _post_json(url=url, headers=headers, payload=payload)
+            except urllib.error.HTTPError as exc:
+                raise RuntimeError(f"OpenAI API error: {exc.read().decode('utf-8')}") from exc
+            parsed = json.loads(body)
+            return _extract_response_text(parsed)
 
     def _fallback_action(self) -> dict[str, Any]:
         if "do_nothing" in self.allowed_actions:
@@ -356,3 +387,54 @@ def _render_template(template: str, values: dict[str, str]) -> str:
     for key, value in values.items():
         rendered = rendered.replace(f"{{{key}}}", value)
     return rendered
+
+
+def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any]) -> str:
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return response.read().decode("utf-8")
+
+
+def _candidate_api_versions(preferred: str | None) -> list[str]:
+    ordered: list[str] = []
+    if isinstance(preferred, str) and preferred.strip():
+        ordered.append(preferred.strip())
+    for candidate in ("preview", "2025-04-01-preview", "2025-03-01-preview", "2025-01-01-preview"):
+        if candidate not in ordered:
+            ordered.append(candidate)
+    return ordered
+
+
+def _candidate_azure_urls(endpoint: str, deployment: str, versions: list[str]) -> list[str]:
+    base = endpoint.rstrip("/")
+    encoded_deployment = quote(deployment, safe="")
+    urls: list[str] = []
+
+    if base.endswith("/openai/v1/responses"):
+        v1_url = base
+    elif base.endswith("/openai/v1"):
+        v1_url = f"{base}/responses"
+    else:
+        v1_url = f"{base}/openai/v1/responses"
+
+    openai_url = f"{base}/openai/responses"
+    deployment_url = f"{base}/openai/deployments/{encoded_deployment}/responses"
+
+    def _append(url: str) -> None:
+        if url not in urls:
+            urls.append(url)
+
+    _append(v1_url)
+    for version in versions:
+        _append(f"{v1_url}?api-version={version}")
+    for version in versions:
+        _append(f"{openai_url}?api-version={version}")
+    for version in versions:
+        _append(f"{deployment_url}?api-version={version}")
+    return urls

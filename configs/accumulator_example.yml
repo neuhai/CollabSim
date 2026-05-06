@@ -10,6 +10,7 @@ agents:
       name: "gpt-5.3-codex"
 prompts:
   task: "prompts/task_accumulator_instructions.md"
+action_space:
   enabled: ["communicate", "decide", "propose", "respond", "transfer"]
 controls:
   communication:
