@@ -3854,69 +3854,118 @@ class ExperimentController:
         return outcome
 
     def _build_run_summary(self, task_outcome: dict[str, Any] | None) -> dict[str, Any]:
-        """Build a run_summary.json payload with per-agent balances, probe Q&A, and confidence scores."""
+        """Build a run_summary.json payload with per-agent state, probe Q&A, and confidence scores."""
+        from collections import defaultdict
         run_id = self.run_id or ""
-        task_type = (task_outcome or {}).get("task_type", "unknown")
+        outcome = task_outcome or {}
+        task_type = outcome.get("task_type", "unknown")
+        ts = self.state.task_state if isinstance(self.state.task_state, dict) else {}
 
-        # --- per-agent final balance / wealth ---
-        agent_balances: dict[str, float | None] = {}
+        # --- per-agent task-specific fields ---
+        agent_task_data: dict[str, dict[str, Any]] = defaultdict(dict)
+
         if task_type == "daytrader":
             private = self.state.buffers.get("daytrader_private_participants") or {}
             for agent_id, data in private.items():
                 if isinstance(data, dict):
-                    agent_balances[agent_id] = data.get("money")
-        elif task_type in ("shapefactory",):
-            participants = self.state.task_state.get("participants") or {}
+                    agent_task_data[agent_id]["final_balance"] = data.get("money")
+
+        elif task_type == "shapefactory":
+            participants = ts.get("participants") or {}
             for agent_id, data in participants.items():
                 if isinstance(data, dict):
-                    agent_balances[agent_id] = data.get("money")
+                    agent_task_data[agent_id]["final_balance"] = data.get("money")
+                    agent_task_data[agent_id]["specialty"] = data.get("specialty")
+                    agent_task_data[agent_id]["production_number"] = data.get("production_number")
+                    agent_task_data[agent_id]["order_progress"] = data.get("order_progress")
+
+        elif task_type == "maptask":
+            participants = ts.get("participants") or {}
+            for agent_id, data in participants.items():
+                if isinstance(data, dict):
+                    agent_task_data[agent_id]["role"] = data.get("role")
+                    mp = data.get("map_progress")
+                    agent_task_data[agent_id]["map_progress_updates"] = len(mp) if isinstance(mp, dict) else 0
+                    pts = data.get("drawn_route_points")
+                    agent_task_data[agent_id]["drawn_points_count"] = len(pts) if isinstance(pts, list) else 0
 
         # --- per-agent probe Q&A ---
-        from collections import defaultdict
         probe_by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in self.state.probe_log:
             if not isinstance(record, dict):
                 continue
-            actor = record.get("actor_id") or record.get("agent_id") or "_unknown_"
+            actor = record.get("actor_id") or "_unknown_"
             probe_by_agent[actor].append({
+                "probe_id": record.get("probe_id"),
+                "template_id": record.get("template_id"),
                 "construct": record.get("construct"),
-                "question": record.get("question"),
+                "prompt": record.get("prompt"),
                 "answer": record.get("answer"),
                 "confidence": record.get("confidence"),
-                "step": record.get("step"),
                 "structured_fields": record.get("structured_fields"),
+                "step": record.get("step"),
+                "timestamp": record.get("timestamp"),
             })
 
         # --- assemble per-agent summary ---
-        all_agent_ids = set(agent_balances) | set(probe_by_agent)
+        all_agent_ids = set(agent_task_data) | set(probe_by_agent)
         per_agent: dict[str, Any] = {}
         for agent_id in sorted(all_agent_ids):
             probes = probe_by_agent.get(agent_id, [])
             confidences = [p["confidence"] for p in probes if isinstance(p.get("confidence"), (int, float))]
-            per_agent[agent_id] = {
-                "final_balance": agent_balances.get(agent_id),
+            entry: dict[str, Any] = {
+                "final_balance": None,
+                **agent_task_data.get(agent_id, {}),
                 "probe_responses": probes,
-                "confidence_mean": sum(confidences) / len(confidences) if confidences else None,
                 "probe_count": len(probes),
+                "confidence_mean": sum(confidences) / len(confidences) if confidences else None,
+            }
+            per_agent[agent_id] = entry
+
+        # --- task-level summary ---
+        task_summary: dict[str, Any] = {
+            "steps_taken": outcome.get("steps_taken", ts.get("steps_taken")),
+            "target_steps": outcome.get("target_steps", ts.get("target_steps")),
+        }
+
+        if task_type == "hidden_profile":
+            final_votes_map = outcome.get("final_votes") or {}
+            task_summary["initial_votes"] = outcome.get("initial_votes") or {}
+            task_summary["final_votes"] = final_votes_map
+            task_summary["phase"] = ts.get("phase")
+            votes = list(final_votes_map.values())
+            task_summary["consensus_reached"] = bool(votes and len(set(votes)) == 1)
+
+        elif task_type == "daytrader":
+            private = self.state.buffers.get("daytrader_private_participants") or {}
+            task_summary["rounds_completed"] = ts.get("rounds_completed")
+            task_summary["target_rounds"] = ts.get("target_rounds")
+            task_summary["starting_money"] = ts.get("starting_money")
+            task_summary["investment_histories"] = {
+                agent_id: data.get("investment_history", [])
+                for agent_id, data in private.items()
+                if isinstance(data, dict)
             }
 
-        # --- task-level summary fields ---
-        task_summary: dict[str, Any] = {}
-        if task_type == "hidden_profile":
-            task_summary["initial_votes"] = (task_outcome or {}).get("initial_votes", {})
-            task_summary["final_votes"] = (task_outcome or {}).get("final_votes", {})
-        if task_type == "daytrader":
-            private = self.state.buffers.get("daytrader_private_participants") or {}
-            investment_histories: dict[str, list] = {}
-            for agent_id, data in private.items():
-                if isinstance(data, dict):
-                    investment_histories[agent_id] = data.get("investment_history", [])
-            task_summary["investment_histories"] = investment_histories
+        elif task_type == "shapefactory":
+            completed_trades = ts.get("completed_trades")
+            pending_offers = ts.get("pending_offers")
+            task_summary["completed_trades"] = len(completed_trades) if isinstance(completed_trades, list) else 0
+            task_summary["pending_offers"] = len(pending_offers) if isinstance(pending_offers, list) else 0
+            task_summary["starting_money"] = (ts.get("participants") or {})
+            # store just the scalar config value
+            cfg_task = (self.config or {}).get("task") or {}
+            task_summary["starting_money"] = float(cfg_task.get("starting_money", 200.0))
+
+        elif task_type == "maptask":
+            task_summary["route_score"] = outcome.get("maptask_route_score")
+            task_summary["route_score_max"] = outcome.get("maptask_route_score_max")
+            task_summary["route_similarity"] = outcome.get("maptask_route_similarity")
 
         return {
             "run_id": run_id,
             "task_type": task_type,
-            "complete": (task_outcome or {}).get("complete"),
+            "complete": outcome.get("complete"),
             "per_agent": per_agent,
             "task_summary": task_summary,
         }
