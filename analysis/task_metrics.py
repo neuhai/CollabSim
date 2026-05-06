@@ -87,8 +87,14 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
         if isinstance(price, (int, float)):
             trade_prices.append(float(price))
 
-    # Wealth from final task_state via observation_built events or task_complete
+    # Prefer run_summary.json for final balances (most authoritative)
     wealth_by_agent: dict[str, float] = {}
+    summary_per_agent = trace.summary.get("per_agent") or {}
+    for aid, sdata in summary_per_agent.items():
+        if isinstance(sdata, dict) and isinstance(sdata.get("final_balance"), (int, float)):
+            wealth_by_agent[aid] = float(sdata["final_balance"])
+
+    # Fallback: wealth from final task_state via observation_built events
     for e in reversed(trace.events):
         payload = e.get("payload") or {}
         obs = payload.get("observation") or {}
@@ -217,7 +223,13 @@ def _daytrader_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[s
         if isinstance(aid, str) and isinstance(money_after, (int, float)):
             per_agent[aid]["final_balance"] = float(money_after)
 
-    # If no settlement events, try to get balance from observation snapshots
+    # Prefer run_summary.json final balances when available
+    summary_per_agent = trace.summary.get("per_agent") or {}
+    for aid, sdata in summary_per_agent.items():
+        if isinstance(sdata, dict) and isinstance(sdata.get("final_balance"), (int, float)):
+            per_agent[aid]["final_balance"] = float(sdata["final_balance"])
+
+    # Fallback for agents with no settlement events
     for aid in trace.agent_ids:
         if per_agent[aid]["final_balance"] == 0.0:
             per_agent[aid]["final_balance"] = starting_money

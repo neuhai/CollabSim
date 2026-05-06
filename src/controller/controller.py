@@ -24,6 +24,7 @@ from src.data.logging import (
     log_probe_records,
     write_metrics,
     write_run_manifest,
+    write_run_summary,
 )
 from src.metrics.metrics import compute_metrics
 from src.probe.probe import ProbeResponse
@@ -3749,6 +3750,8 @@ class ExperimentController:
             task_outcome=task_outcome,
         )
         write_metrics(self.run_paths, {"per_agent": result.per_agent, "per_run": result.per_run})
+        summary = self._build_run_summary(task_outcome)
+        write_run_summary(self.run_paths, summary)
         if isinstance(task_outcome, dict) and task_outcome.get("task_type") == "maptask":
             score_map_text = task_outcome.get("maptask_score_map_text")
             if isinstance(score_map_text, str) and score_map_text:
@@ -3849,6 +3852,74 @@ class ExperimentController:
                 if route_score is not None:
                     outcome.update(route_score)
         return outcome
+
+    def _build_run_summary(self, task_outcome: dict[str, Any] | None) -> dict[str, Any]:
+        """Build a run_summary.json payload with per-agent balances, probe Q&A, and confidence scores."""
+        run_id = self.run_id or ""
+        task_type = (task_outcome or {}).get("task_type", "unknown")
+
+        # --- per-agent final balance / wealth ---
+        agent_balances: dict[str, float | None] = {}
+        if task_type == "daytrader":
+            private = self.state.buffers.get("daytrader_private_participants") or {}
+            for agent_id, data in private.items():
+                if isinstance(data, dict):
+                    agent_balances[agent_id] = data.get("money")
+        elif task_type in ("shapefactory",):
+            participants = self.state.task_state.get("participants") or {}
+            for agent_id, data in participants.items():
+                if isinstance(data, dict):
+                    agent_balances[agent_id] = data.get("money")
+
+        # --- per-agent probe Q&A ---
+        from collections import defaultdict
+        probe_by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for record in self.state.probe_log:
+            if not isinstance(record, dict):
+                continue
+            actor = record.get("actor_id") or record.get("agent_id") or "_unknown_"
+            probe_by_agent[actor].append({
+                "construct": record.get("construct"),
+                "question": record.get("question"),
+                "answer": record.get("answer"),
+                "confidence": record.get("confidence"),
+                "step": record.get("step"),
+                "structured_fields": record.get("structured_fields"),
+            })
+
+        # --- assemble per-agent summary ---
+        all_agent_ids = set(agent_balances) | set(probe_by_agent)
+        per_agent: dict[str, Any] = {}
+        for agent_id in sorted(all_agent_ids):
+            probes = probe_by_agent.get(agent_id, [])
+            confidences = [p["confidence"] for p in probes if isinstance(p.get("confidence"), (int, float))]
+            per_agent[agent_id] = {
+                "final_balance": agent_balances.get(agent_id),
+                "probe_responses": probes,
+                "confidence_mean": sum(confidences) / len(confidences) if confidences else None,
+                "probe_count": len(probes),
+            }
+
+        # --- task-level summary fields ---
+        task_summary: dict[str, Any] = {}
+        if task_type == "hidden_profile":
+            task_summary["initial_votes"] = (task_outcome or {}).get("initial_votes", {})
+            task_summary["final_votes"] = (task_outcome or {}).get("final_votes", {})
+        if task_type == "daytrader":
+            private = self.state.buffers.get("daytrader_private_participants") or {}
+            investment_histories: dict[str, list] = {}
+            for agent_id, data in private.items():
+                if isinstance(data, dict):
+                    investment_histories[agent_id] = data.get("investment_history", [])
+            task_summary["investment_histories"] = investment_histories
+
+        return {
+            "run_id": run_id,
+            "task_type": task_type,
+            "complete": (task_outcome or {}).get("complete"),
+            "per_agent": per_agent,
+            "task_summary": task_summary,
+        }
 
     def _maptask_route_similarity(self, participants: dict[str, Any]) -> dict[str, Any] | None:
         guider_map_text: str | None = None

@@ -29,6 +29,7 @@ from typing import Any
 from analysis.trace_parser import Trace, find_run_dirs, load_trace
 from analysis.task_metrics import task_summary_rows
 from analysis.probe_analysis import probe_summary_rows
+from analysis.summary_stats import summary_stat_rows
 
 
 # ------------------------------------------------------------------ #
@@ -90,10 +91,11 @@ def _join_rows(
 # Single-trace analysis
 # ------------------------------------------------------------------ #
 
-def analyse_trace(trace: Trace) -> tuple[list[dict], list[dict]]:
+def analyse_trace(trace: Trace) -> tuple[list[dict], list[dict], list[dict]]:
     task_rows = task_summary_rows(trace)
     probe_rows = probe_summary_rows(trace)
-    return task_rows, probe_rows
+    stat_rows = summary_stat_rows(trace)
+    return task_rows, probe_rows, stat_rows
 
 
 # ------------------------------------------------------------------ #
@@ -103,6 +105,7 @@ def analyse_trace(trace: Trace) -> tuple[list[dict], list[dict]]:
 def run_analysis(run_dirs: list[Path], out_dir: Path) -> None:
     all_task_rows: list[dict[str, Any]] = []
     all_probe_rows: list[dict[str, Any]] = []
+    all_stat_rows: list[dict[str, Any]] = []
 
     for run_dir in run_dirs:
         print(f"  loading {run_dir} …")
@@ -111,14 +114,16 @@ def run_analysis(run_dirs: list[Path], out_dir: Path) -> None:
         except Exception as exc:
             print(f"  ⚠ skipped {run_dir}: {exc}")
             continue
-        task_rows, probe_rows = analyse_trace(trace)
+        task_rows, probe_rows, stat_rows = analyse_trace(trace)
         all_task_rows.extend(task_rows)
         all_probe_rows.extend(probe_rows)
+        all_stat_rows.extend(stat_rows)
 
     print(f"\n{len(run_dirs)} run(s) processed.")
     _write_csv(out_dir / "task_metrics.csv", all_task_rows)
     _write_csv(out_dir / "probe_metrics.csv", all_probe_rows)
     _write_csv(out_dir / "combined.csv", _join_rows(all_task_rows, all_probe_rows))
+    _write_csv(out_dir / "run_summary_stats.csv", all_stat_rows)
 
 
 # ------------------------------------------------------------------ #

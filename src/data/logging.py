@@ -38,6 +38,10 @@ class RunPaths:
     def manifest_path(self) -> Path:
         return self.run_dir / "run_manifest.json"
 
+    @property
+    def summary_path(self) -> Path:
+        return self.run_dir / "run_summary.json"
+
 
 def init_run_dir(run_dir: str | Path) -> RunPaths:
     path = Path(run_dir)
@@ -187,3 +191,9 @@ def write_metrics(paths: RunPaths, metrics: dict[str, Any]) -> None:
     """Write run-level metrics to metrics.json."""
 
     write_json(paths.metrics_path, metrics)
+
+
+def write_run_summary(paths: RunPaths, summary: dict[str, Any]) -> None:
+    """Write the human-readable per-agent run summary to run_summary.json."""
+
+    write_json(paths.summary_path, summary)

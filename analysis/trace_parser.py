@@ -25,6 +25,7 @@ class Trace:
     probes: list[dict[str, Any]] = field(default_factory=list)
     actions: list[dict[str, Any]] = field(default_factory=list)
     manifest: dict[str, Any] = field(default_factory=dict)
+    summary: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ #
     # Derived convenience views (populated by load())
@@ -91,6 +92,7 @@ def load_trace(run_dir: str | Path) -> Trace:
     trace.probes = _read_jsonl(root / "probes.jsonl")
     trace.actions = _read_jsonl(root / "actions.jsonl")
     trace.manifest = _read_json(root / "run_manifest.json")
+    trace.summary = _read_json(root / "run_summary.json")
     return trace
 
 
