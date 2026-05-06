@@ -52,56 +52,24 @@ controls:
 
 task:
   type: "hidden_profile"
+  target_steps: 3
   phase_rules:
     initial_vote_decision_id: "initial_vote"
     final_vote_decision_id: "final_vote"
     discussion_action_types: ["communicate"]
     discussion_duration_sec: 300
   shared_facts:
-    - "Candidate A can anticipate dangerous situations."
-    - "Candidate A is able to see complex connections."
-    - "Candidate A has excellent spatial vision."
-    - "Candidate A has very good leadership qualities."
-    - "Candidate B keeps calm in a crisis."
-    - "Candidate B is known to be 100% reliable."
-    - "Candidate B is good at assessing weather conditions."
-    - "Candidate B has excellent computer skills."
-    - "Candidate C creates a positive atmosphere with his crew."
-    - "Candidate C is very conscientious."
-    - "Candidate C has difficulty communicating ideas."
-    - "Candidate C is regarded as egocentric."
-    - "Candidate D responds to unexpected events adequately."
-    - "Candidate D can concentrate very well."
-    - "Candidate D solves problems extremely well."
-    - "Candidate D takes responsibility seriously."
+    - "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-off - is regarded as being not open to new ideas - is unfriendly - eats unhealthily"
+    - "Candidate B - keeps calm in a crisis - is known to be 100% reliable - is good at assessing weather conditions - has excellent computer skills - can be grumpy - can be uncooperative - has a relatively weak memory for numbers - makes nasty remarks about colleagues - is regarded as pretentious - sometimes adopts the wrong tone when communicating"
+    - "Candidate C - has difficulty communicating ideas - is regarded as egocentric - is not very willing to further his education"
+    - "Candidate D - responds to unexpected events adequately - can concentrate very well - solves problems extremely well - takes responsibility seriously - is regarded as arrogant - has relatively weak leadership skills - is regarded as a know-it-all - has a hot temper - is considered moody - is regarded as a loner"
   private_facts:
     A:
-      - "Candidate A is sometimes not good at taking criticism."
-      - "Candidate A can be unorganised."
-      - "Candidate B can be grumpy."
-      - "Candidate B can be uncooperative."
-      - "Candidate C is not very willing to further his education."
-      - "Candidate D has relatively weak leadership skills."
-      - "Candidate D is regarded as a know-it-all."
-      - "Candidate D has a hot temper."
+      - "Candidate C - can make correct decisions quickly - handles stress very well"
     B:
-      - "Candidate A is regarded as a show-off."
-      - "Candidate A is regarded as being not open to new ideas."
-      - "Candidate B has a relatively weak memory for numbers."
-      - "Candidate B makes nasty remarks about colleagues."
-      - "Candidate C can make correct decisions quickly."
-      - "Candidate C handles stress very well."
-      - "Candidate D is regarded as arrogant."
-      - "Candidate D is considered moody."
-    C: 
-      - "Candidate A is unfriendly."
-      - "Candidate A eats unhealthily."
-      - "Candidate B is regarded as pretentious."
-      - "Candidate B sometimes adopts the wrong tone when communicating."
-      - "Candidate C understands complicated technology."
-      - "Candidate C puts concern for others above everything."
-      - "Candidate C has excellent attention skills."
-      - "Candidate D is regarded as a loner."
+      - "Candidate C - creates a positive atmosphere with his crew - is very conscientious"
+    C:
+      - "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
 
 protocol:
   turn_taking: "simultaneous"
