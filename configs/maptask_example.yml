@@ -58,7 +58,7 @@ protocol:
 probe:
   cadence: "per_action"
   templates: ["situation_awareness_v1"]
-  questions_path: "prompts/interview_questions.json"
+  questions_path: "prompts/interview_questions_map_task.json"
 
 logging:
   trace_schema_version: "v0"

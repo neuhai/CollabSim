@@ -73,7 +73,7 @@ protocol:
 probe:
   cadence: "per_action"
   templates: ["grounding_v1"]
-  questions_path: "prompts/interview_questions.json"
+  questions_path: "prompts/interview_questions_shape_factory_daytrader.json"
 
 logging:
   trace_schema_version: "v0"

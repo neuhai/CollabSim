@@ -90,7 +90,7 @@ probe:
   cadence: "per_agent_n_actions"
   every_n_actions: 5
   templates: ["grounding_v1"]
-  questions_path: "prompts/interview_questions.json"
+  questions_path: "prompts/interview_questions_shape_factory_daytrader.json"
 
 logging:
   trace_schema_version: "v0"

@@ -82,7 +82,7 @@ protocol:
 probe:
   cadence: "per_action"
   templates: ["grounding_v1", "coordination_v1"]
-  questions_path: "prompts/interview_questions.json"
+  questions_path: "prompts/interview_questions_hidden_profile.json"
 
 logging:
   trace_schema_version: "v0"
