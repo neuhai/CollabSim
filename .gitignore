@@ -1,6 +1,30 @@
 .env
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
 
 # Local experiment outputs
 experiments/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+

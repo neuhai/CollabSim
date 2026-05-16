@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import copy
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import heapq
@@ -533,8 +534,14 @@ class ExperimentController:
             observation_map[agent_id] = self._get_cached_observation(agent_id)
 
         proposals: dict[str, Any] = {}
+        all_async = bool(observation_map) and all(
+            getattr(self.state.agents.get(aid), "supports_async", False)
+            for aid in observation_map
+        )
         max_workers = min(self._max_concurrent_requests(), len(observation_map))
-        if max_workers <= 1:
+        if all_async and len(observation_map) > 1:
+            proposals = asyncio.run(self._gather_proposals_async(observation_map))
+        elif max_workers <= 1:
             for agent_id, observation in observation_map.items():
                 proposals[agent_id] = self._invoke_agent_context_update(agent_id, observation)
         else:
@@ -797,8 +804,14 @@ class ExperimentController:
             observation_map[agent_id] = self._get_cached_observation(agent_id)
 
         proposals: dict[str, Any] = {}
+        all_async = bool(observation_map) and all(
+            getattr(self.state.agents.get(aid), "supports_async", False)
+            for aid in observation_map
+        )
         max_workers = min(self._max_concurrent_requests(), len(observation_map))
-        if max_workers <= 1:
+        if all_async and len(observation_map) > 1:
+            proposals = asyncio.run(self._gather_proposals_async(observation_map))
+        elif max_workers <= 1:
             for agent_id, observation in observation_map.items():
                 proposals[agent_id] = self._invoke_agent_context_update(agent_id, observation)
         else:
@@ -850,6 +863,60 @@ class ExperimentController:
                 {"agent_id": agent_id, "action": action},
             )
         return action_types
+
+    async def _gather_proposals_async(
+        self, observation_map: dict[str, Observation]
+    ) -> dict[str, Any]:
+        """Fire all async-capable agent requests concurrently via asyncio.gather.
+
+        Replicates the notify/trace logic of _invoke_agent_context_update, but
+        the actual HTTP calls run concurrently (cooperative async I/O).
+        Sync code between awaits is safe because asyncio is single-threaded.
+        """
+        async def _invoke_one(agent_id: str, observation: Observation) -> tuple[str, Any]:
+            try:
+                self._notify_runtime(
+                    "context_update_start",
+                    {
+                        "agent_id": agent_id,
+                        "step_index": self.state.step_index,
+                        "sim_time_ms": self.state.sim_time_ms,
+                        **self._daytrader_runtime_fields(),
+                    },
+                )
+                agent = self.state.agents[agent_id]
+                proposal = await agent.context_update_async(observation)
+                self._notify_runtime(
+                    "context_update_end",
+                    {
+                        "agent_id": agent_id,
+                        "step_index": self.state.step_index,
+                        "sim_time_ms": self.state.sim_time_ms,
+                        **self._daytrader_runtime_fields(),
+                    },
+                )
+                if self.run_paths is not None:
+                    _rr = getattr(proposal, "raw_response", None) or (proposal.get("raw_response") if isinstance(proposal, dict) else None)
+                    _action = getattr(proposal, "action", None) or (proposal.get("action") if isinstance(proposal, dict) else None)
+                    _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
+                    _ps = getattr(proposal, "prompt_static", None) or (proposal.get("prompt_static") if isinstance(proposal, dict) else None)
+                    _pu = getattr(proposal, "prompt_update", None) or (proposal.get("prompt_update") if isinstance(proposal, dict) else None)
+                    _first_time = agent_id not in self._trace_seen_agents
+                    self._trace_seen_agents.add(agent_id)
+                    _input: dict[str, Any] = {"static": _ps.splitlines(), "update": _pu} if _first_time and isinstance(_ps, str) else {"update": _pu}
+                    append_trace(self.run_paths.trace_path, {
+                        "step_index": self.state.step_index,
+                        "agent_id": agent_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "input": _input,
+                        "output": {"raw": _rr, "action": _action, "rationale": _rationale},
+                    })
+                return agent_id, proposal
+            except Exception:
+                return agent_id, None
+
+        results = await asyncio.gather(*(_invoke_one(aid, obs) for aid, obs in observation_map.items()))
+        return dict(results)
 
     def _invoke_agent_context_update(self, agent_id: str, observation: Observation) -> Any:
         agent = self.state.agents.get(agent_id)

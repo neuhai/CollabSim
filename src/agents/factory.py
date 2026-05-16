@@ -9,6 +9,7 @@ import random
 from src.agents.interface import AgentMetadata
 from src.agents.openai_agent import OpenAIAgent
 from src.agents.azure_agent import AzureOpenAIAgent
+from src.agents.sglang_agent import SGLangAgent
 from src.utils.env import load_text_file
 
 
@@ -60,7 +61,7 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
             continue
         provider = model.get("provider")
         name = model.get("name")
-        if provider not in ("openai", "azure_openai", "azure"):
+        if provider not in ("openai", "azure_openai", "azure", "sglang"):
             continue
         metadata = AgentMetadata(
             agent_id=agent_id,
@@ -92,6 +93,8 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
         )
         if provider in ("azure_openai", "azure"):
             agents[agent_id] = AzureOpenAIAgent(**kwargs)
+        elif provider == "sglang":
+            agents[agent_id] = SGLangAgent(**kwargs)
         else:
             agents[agent_id] = OpenAIAgent(**kwargs)
     return agents

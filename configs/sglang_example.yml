@@ -1,0 +1,120 @@
+# SGLang provider example — hidden-profile task with local open-source models.
+#
+# Before running:
+#   1. Start the inference server:
+#        python scripts/start_sglang_server.py meta-llama/Llama-3.1-8B-Instruct --tp 1
+#      For a large model across all 4 A100s:
+#        python scripts/start_sglang_server.py meta-llama/Llama-3.3-70B-Instruct --tp 4
+#
+#   2. Export connection env vars (or add them to a .env file):
+#        export SGLANG_HOST=127.0.0.1
+#        export SGLANG_PORT=30000
+#
+#   3. Run the experiment:
+#        python -m src.cli configs/sglang_example.yml --print-actions
+#
+# To run multiple models in parallel, start each on a different port and
+# point different agent configs at them via SGLANG_PORT overrides, or run
+# separate experiments with different SGLANG_PORT values.
+#
+# Model name in model.name is passed directly to SGLang as the model= field
+# in the OpenAI-compatible API request.  It must match the model loaded on
+# the server.
+
+experiment:
+  id: "hidden_profile_sglang_v1"
+  seed: 42
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_hidden_profile_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format_hiddenprofile.md"
+  action: "prompts/action_prompt.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - id: "A"
+    role: "planner"
+    model:
+      provider: "sglang"
+      name: "meta-llama/Llama-3.1-8B-Instruct"  # must match the model loaded on the server
+      temperature: 0.2
+      max_tokens: 1024
+  - id: "B"
+    role: "analyst"
+    model:
+      provider: "sglang"
+      name: "meta-llama/Llama-3.1-8B-Instruct"
+      temperature: 0.2
+      max_tokens: 1024
+  - id: "C"
+    role: "planner"
+    model:
+      provider: "sglang"
+      name: "meta-llama/Llama-3.1-8B-Instruct"
+      temperature: 0.2
+      max_tokens: 1024
+
+action_space:
+  enabled: ["communicate", "decide", "do_nothing"]
+  decide:
+    reveal: "aggregated"
+
+controls:
+  communication:
+    mode: "broadcast"
+    max_messages_per_turn: 1
+  information_distribution:
+    visibility: "asymmetric"
+  visibility_defaults:
+    task_state: ["shared_facts", "target_steps", "steps_taken", "complete", "phase", "phase_rules", "discussion_started_at_sec"]
+    resources: ["*"]
+    turn_state: ["*"]
+    buffers: ["*"]
+
+task:
+  type: "hidden_profile"
+  target_steps: 3
+  phase_rules:
+    initial_vote_decision_id: "initial_vote"
+    final_vote_decision_id: "final_vote"
+    discussion_action_types: ["communicate"]
+    discussion_duration_sec: 600
+  shared_facts:
+    - "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-off - is regarded as being not open to new ideas - is unfriendly - eats unhealthily"
+    - "Candidate B - keeps calm in a crisis - is known to be 100% reliable - is good at assessing weather conditions - has excellent computer skills - can be grumpy - can be uncooperative - has a relatively weak memory for numbers - makes nasty remarks about colleagues - is regarded as pretentious - sometimes adopts the wrong tone when communicating"
+    - "Candidate C - has difficulty communicating ideas - is regarded as egocentric - is not very willing to further his education"
+    - "Candidate D - responds to unexpected events adequately - can concentrate very well - solves problems extremely well - takes responsibility seriously - is regarded as arrogant - has relatively weak leadership skills - is regarded as a know-it-all - has a hot temper - is considered moody - is regarded as a loner"
+  private_facts:
+    A:
+      - "Candidate C - can make correct decisions quickly - handles stress very well"
+    B:
+      - "Candidate C - creates a positive atmosphere with his crew - is very conscientious"
+    C:
+      - "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "time"
+  agent_trigger_interval_sec: 20
+  termination:
+    condition: "task_complete"
+  # All agents are SGLang → the controller uses asyncio.gather to fire all
+  # requests concurrently.  max_concurrent_requests is still respected as an
+  # upper bound on the gather batch size if you want to throttle throughput.
+  max_concurrent_requests: 4
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_action"
+  templates: ["grounding_v1", "coordination_v1"]
+  questions_path: "prompts/interview_questions_hidden_profile.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/hidden_profile_sglang"
+  observation_events: true
