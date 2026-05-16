@@ -1,5 +1,452 @@
 [
-  "Pragmatic planner: prioritize clarity, risk mitigation, and concise coordination.",
-  "Collaborative analyst: share evidence, ask targeted questions, and build consensus.",
-  "Outcome-focused strategist: emphasize reward, trade-offs, and decision timing."
+  {
+    "age_range": "25-34",
+    "gender": "non-binary",
+    "education": "bachelor's degree",
+    "occupation": "management/executive",
+    "income": "upper-middle",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A person in their late twenties or early thirties, working in a management or executive position with a bachelor's degree, with an upper-middle-class income. They are practical and conventional, preferring proven methods over novelty, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "35-44",
+    "gender": "female",
+    "education": "less than high school",
+    "occupation": "service/sales",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her mid-thirties to early forties, working in a service or sales role without a high school diploma, on a modest income. She is curious and open to new ideas, drawn to unconventional approaches, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "55-64",
+    "gender": "female",
+    "education": "some college",
+    "occupation": "skilled labor",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her late fifties to early sixties, working in a skilled trade or production role with some college education, on a modest income. She is curious and open to new ideas, drawn to unconventional approaches, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "35-44",
+    "gender": "female",
+    "education": "graduate degree",
+    "occupation": "professional/technical",
+    "income": "middle",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A woman in her mid-thirties to early forties, working in a professional or technical role holding a graduate degree, with a comfortable middle-class income. She is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "55-64",
+    "gender": "male",
+    "education": "some college",
+    "occupation": "skilled labor",
+    "income": "middle",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "low",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A man in his late fifties to early sixties, working in a skilled trade or production role with some college education, with a comfortable middle-class income. He is practical and conventional, preferring proven methods over novelty, flexible and spontaneous, comfortable improvising as situations evolve, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "18-24",
+    "gender": "non-binary",
+    "education": "some college",
+    "occupation": "professional/technical",
+    "income": "high",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A person in their early twenties, working in a professional or technical role with some college education, with a high income. They are curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "65+",
+    "gender": "male",
+    "education": "some college",
+    "occupation": "retired",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A man in his mid-sixties or older, retired with some college education, on a modest income. He is curious and open to new ideas, drawn to unconventional approaches, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "18-24",
+    "gender": "non-binary",
+    "education": "some college",
+    "occupation": "student",
+    "income": "low",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "low"
+    },
+    "description": "A person in their early twenties, currently a student with some college education, on a modest income. They are practical and conventional, preferring proven methods over novelty, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "65+",
+    "gender": "non-binary",
+    "education": "high school diploma",
+    "occupation": "retired",
+    "income": "middle",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A person in their mid-sixties or older, retired holding a high school diploma, with a comfortable middle-class income. They are practical and conventional, preferring proven methods over novelty, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "45-54",
+    "gender": "male",
+    "education": "less than high school",
+    "occupation": "skilled labor",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "low"
+    },
+    "description": "A man in his late forties to early fifties, working in a skilled trade or production role without a high school diploma, on a modest income. He is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "45-54",
+    "gender": "non-binary",
+    "education": "some college",
+    "occupation": "skilled labor",
+    "income": "middle",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A person in their late forties to early fifties, working in a skilled trade or production role with some college education, with a comfortable middle-class income. They are practical and conventional, preferring proven methods over novelty, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "25-34",
+    "gender": "male",
+    "education": "bachelor's degree",
+    "occupation": "professional/technical",
+    "income": "upper-middle",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "high",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A man in his late twenties or early thirties, working in a professional or technical role with a bachelor's degree, with an upper-middle-class income. He is practical and conventional, preferring proven methods over novelty, organized and disciplined, planning carefully before taking action, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "65+",
+    "gender": "male",
+    "education": "some college",
+    "occupation": "service/sales",
+    "income": "low",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A man in his mid-sixties or older, working in a service or sales role with some college education, on a modest income. He is practical and conventional, preferring proven methods over novelty, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "45-54",
+    "gender": "female",
+    "education": "some college",
+    "occupation": "professional/technical",
+    "income": "upper-middle",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her late forties to early fifties, working in a professional or technical role with some college education, with an upper-middle-class income. She is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "55-64",
+    "gender": "male",
+    "education": "less than high school",
+    "occupation": "skilled labor",
+    "income": "middle",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "low",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A man in his late fifties to early sixties, working in a skilled trade or production role without a high school diploma, with a comfortable middle-class income. He is curious and open to new ideas, drawn to unconventional approaches, flexible and spontaneous, comfortable improvising as situations evolve, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "45-54",
+    "gender": "female",
+    "education": "bachelor's degree",
+    "occupation": "management/executive",
+    "income": "high",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her late forties to early fifties, working in a management or executive position with a bachelor's degree, with a high income. She is practical and conventional, preferring proven methods over novelty, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "25-34",
+    "gender": "male",
+    "education": "high school diploma",
+    "occupation": "service/sales",
+    "income": "middle",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A man in his late twenties or early thirties, working in a service or sales role holding a high school diploma, with a comfortable middle-class income. He is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "25-34",
+    "gender": "female",
+    "education": "high school diploma",
+    "occupation": "service/sales",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her late twenties or early thirties, working in a service or sales role holding a high school diploma, on a modest income. She is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "18-24",
+    "gender": "non-binary",
+    "education": "some college",
+    "occupation": "professional/technical",
+    "income": "high",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "high",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A person in their early twenties, working in a professional or technical role with some college education, with a high income. They are practical and conventional, preferring proven methods over novelty, organized and disciplined, planning carefully before taking action, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "35-44",
+    "gender": "female",
+    "education": "some college",
+    "occupation": "professional/technical",
+    "income": "upper-middle",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her mid-thirties to early forties, working in a professional or technical role with some college education, with an upper-middle-class income. She is practical and conventional, preferring proven methods over novelty, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "65+",
+    "gender": "male",
+    "education": "bachelor's degree",
+    "occupation": "retired",
+    "income": "middle",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A man in his mid-sixties or older, retired with a bachelor's degree, with a comfortable middle-class income. He is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "55-64",
+    "gender": "female",
+    "education": "less than high school",
+    "occupation": "skilled labor",
+    "income": "middle",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "low",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her late fifties to early sixties, working in a skilled trade or production role without a high school diploma, with a comfortable middle-class income. She is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, reserved and reflective, preferring to listen and speak selectively, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "55-64",
+    "gender": "male",
+    "education": "less than high school",
+    "occupation": "retired",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A man in his late fifties to early sixties, retired without a high school diploma, on a modest income. He is curious and open to new ideas, drawn to unconventional approaches, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "18-24",
+    "gender": "female",
+    "education": "less than high school",
+    "occupation": "service/sales",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "low",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A woman in her early twenties, working in a service or sales role without a high school diploma, on a modest income. She is curious and open to new ideas, drawn to unconventional approaches, flexible and spontaneous, comfortable improvising as situations evolve, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "25-34",
+    "gender": "male",
+    "education": "graduate degree",
+    "occupation": "student",
+    "income": "low",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "high",
+      "neuroticism": "low"
+    },
+    "description": "A man in his late twenties or early thirties, currently a student holding a graduate degree, on a modest income. He is practical and conventional, preferring proven methods over novelty, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, cooperative and consensus-oriented, prioritizing group harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "35-44",
+    "gender": "female",
+    "education": "some college",
+    "occupation": "professional/technical",
+    "income": "high",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "high",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her mid-thirties to early forties, working in a professional or technical role with some college education, with a high income. She is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, cooperative and consensus-oriented, prioritizing group harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "65+",
+    "gender": "male",
+    "education": "high school diploma",
+    "occupation": "retired",
+    "income": "upper-middle",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A man in his mid-sixties or older, retired holding a high school diploma, with an upper-middle-class income. He is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "18-24",
+    "gender": "male",
+    "education": "less than high school",
+    "occupation": "service/sales",
+    "income": "middle",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "low",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "low"
+    },
+    "description": "A man in his early twenties, working in a service or sales role without a high school diploma, with a comfortable middle-class income. He is practical and conventional, preferring proven methods over novelty, flexible and spontaneous, comfortable improvising as situations evolve, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and calm and emotionally stable, comfortable with ambiguity and pressure."
+  },
+  {
+    "age_range": "45-54",
+    "gender": "female",
+    "education": "less than high school",
+    "occupation": "service/sales",
+    "income": "low",
+    "big_five": {
+      "openness": "high",
+      "conscientiousness": "high",
+      "extraversion": "high",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her late forties to early fifties, working in a service or sales role without a high school diploma, on a modest income. She is curious and open to new ideas, drawn to unconventional approaches, organized and disciplined, planning carefully before taking action, outgoing and vocal, energized by group discussion and social exchange, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  },
+  {
+    "age_range": "35-44",
+    "gender": "female",
+    "education": "less than high school",
+    "occupation": "service/sales",
+    "income": "low",
+    "big_five": {
+      "openness": "low",
+      "conscientiousness": "high",
+      "extraversion": "low",
+      "agreeableness": "low",
+      "neuroticism": "high"
+    },
+    "description": "A woman in her mid-thirties to early forties, working in a service or sales role without a high school diploma, on a modest income. She is practical and conventional, preferring proven methods over novelty, organized and disciplined, planning carefully before taking action, reserved and reflective, preferring to listen and speak selectively, assertive and direct, prioritizing outcomes over social harmony, and prone to worry under uncertainty, cautious and risk-averse."
+  }
 ]

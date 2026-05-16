@@ -1,6 +1,6 @@
 experiment:
-  id: "daytrader_v1"
-  seed: 116
+  id: "daytrader_rand5"
+  seed: 760
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -61,9 +61,9 @@ protocol:
 probe:
   cadence: "per_action"
   templates: ["grounding_v1", "coordination_v1"]
-  questions_path: "prompts/interview_questions_shape_factory_daytrader.json"
+  questions_path: "prompts/interview_questions.json"
 
 logging:
   trace_schema_version: "v0"
-  output_dir: "experiments/daytrader_v1"
+  output_dir: "experiments/daytrader_rand5"
   observation_events: true

@@ -162,6 +162,20 @@ def maptask_apply_action(
         )
         return True
 
+    if not added_points:
+        current_pos = me.get("current_position")
+        pos_hint = f" Your current_position is {current_pos}. Start your next segment from there." if current_pos else ""
+        emit_event(
+            event_type="action_rejected",
+            actor_id=actor_id,
+            visibility="system",
+            payload={
+                "action": {"type": "update_map_progress", "payload": payload},
+                "error_message": f"All submitted points are already drawn — no new cells were added.{pos_hint}",
+            },
+        )
+        return True
+
     current = me.get("map_progress")
     if not isinstance(current, dict):
         current = {}
@@ -173,6 +187,8 @@ def maptask_apply_action(
     all_points = existing_points.union(added_points)
     me["drawn_route_points"] = [[row, col] for row, col in sorted(all_points)]
     me["map_working_text"] = "\n".join("".join(row) for row in grid)
+    if drawn_points:
+        me["current_position"] = list(drawn_points[-1])
 
     finish_cell = _finish_cell(task_state)
     if isinstance(finish_cell, tuple) and finish_cell in all_points:

@@ -55,7 +55,7 @@ class OpenAIAgent:
         _ = state
 
     def context_update(self, observation: Observation) -> ActionProposal:
-        prompt = self._build_action_prompt(observation)
+        prompt, prompt_static, prompt_update = self._build_action_prompt(observation)
         text = self._call_openai(prompt)
         parsed = _parse_json(text)
         rationale = parsed.get("rationale") if isinstance(parsed, dict) else None
@@ -64,15 +64,19 @@ class OpenAIAgent:
             if isinstance(raw_actions, list):
                 actions = self._normalize_actions(raw_actions)
                 if len(actions) == 1:
-                    return ActionProposal(action=actions[0], rationale=rationale if isinstance(rationale, str) else None)
+                    return ActionProposal(action=actions[0], rationale=rationale if isinstance(rationale, str) else None, prompt_text=prompt, raw_response=text, prompt_static=prompt_static, prompt_update=prompt_update)
                 if len(actions) > 1:
                     return {
                         "actions": actions,
                         "rationale": rationale if isinstance(rationale, str) else None,
+                        "prompt_text": prompt,
+                        "raw_response": text,
+                        "prompt_static": prompt_static,
+                        "prompt_update": prompt_update,
                     }
         action = parsed.get("action") if isinstance(parsed, dict) else None
         action = self._normalize_action(action)
-        return ActionProposal(action=action, rationale=rationale if isinstance(rationale, str) else None)
+        return ActionProposal(action=action, rationale=rationale if isinstance(rationale, str) else None, prompt_text=prompt, raw_response=text, prompt_static=prompt_static, prompt_update=prompt_update)
 
     def propose_action(self, observation: Observation) -> ActionProposal:
         """Backward-compatible alias for context_update."""
@@ -98,18 +102,22 @@ class OpenAIAgent:
             structured_fields=structured_fields if isinstance(structured_fields, dict) else None,
         )
 
-    def _build_action_prompt(self, observation: Observation) -> str:
+    def _build_action_prompt(self, observation: Observation) -> tuple[str, str, dict[str, Any]]:
+        """Returns (full_prompt, static_prefix, observation_payload).
+
+        full_prompt is sent to the API unchanged.
+        static_prefix captures agent-level instructions (logged once per agent).
+        observation_payload is the per-turn dynamic data (logged every turn).
+        """
         allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
         decide_reveal = self.decide_reveal or "aggregated"
-        observation_json = json.dumps(
-            {
-                "agent_id": self.metadata.agent_id,
-                "state": observation.state,
-                "visible_events": observation.visible_events,
-                "memory": observation.memory,
-            },
-            ensure_ascii=False,
-        )
+        observation_payload: dict[str, Any] = {
+            "agent_id": self.metadata.agent_id,
+            "state": observation.state,
+            "visible_events": observation.visible_events,
+            "memory": observation.memory,
+        }
+        observation_json = json.dumps(observation_payload, ensure_ascii=False)
         persona_profile = self.persona_profile or "Default collaborative persona."
         persona_prompt = _render_template(self.persona_prompt_template, {"persona_profile": persona_profile})
         protocol_prompt = _render_template(
@@ -126,7 +134,16 @@ class OpenAIAgent:
                 "decide_reveal": decide_reveal,
             },
         )
-        return (
+        static_prefix = (
+            f"{self.system_prompt}\n\n"
+            f"Your participant id is: {self.metadata.agent_id}\n\n"
+            f"{persona_prompt}\n\n"
+            f"{self.task_prompt_template}\n\n"
+            f"{protocol_prompt}\n\n"
+            f"{action_space_prompt}\n\n"
+            f"{return_format_prompt}"
+        )
+        full_prompt = (
             f"{self.system_prompt}\n\n"
             f"Your participant id is: {self.metadata.agent_id}\n\n"
             f"{persona_prompt}\n\n"
@@ -137,6 +154,7 @@ class OpenAIAgent:
             f"{return_format_prompt}\n\n"
             f"{action_prompt}"
         )
+        return full_prompt, static_prefix, observation_payload
 
     def _build_probe_prompt(
         self,

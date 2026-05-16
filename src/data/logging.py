@@ -42,11 +42,22 @@ class RunPaths:
     def summary_path(self) -> Path:
         return self.run_dir / "run_summary.json"
 
+    @property
+    def trace_path(self) -> Path:
+        return self.run_dir / "trace.jsonl"
+
 
 def init_run_dir(run_dir: str | Path) -> RunPaths:
     path = Path(run_dir)
     path.mkdir(parents=True, exist_ok=True)
     return RunPaths(run_dir=path)
+
+
+def append_trace(path: Path, record: dict[str, Any]) -> None:
+    """Append one agent-turn trace record to trace.jsonl."""
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, indent=2))
+        handle.write("\n")
 
 
 def append_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> None:

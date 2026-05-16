@@ -16,6 +16,8 @@ from src.tasks.registry import TaskDefinition
 
 _PRIVATE_KEY = "daytrader_private_participants"
 _GROUP_POOL_KEY = "daytrader_group_pool"
+_ROUND_START_MONEY_KEY = "daytrader_round_start_money"
+_ROUND_BONUS = 90.0
 
 
 def daytrader_init_state(config: dict[str, Any]) -> dict[str, Any]:
@@ -67,18 +69,7 @@ def daytrader_init_state(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def daytrader_step(state: dict[str, Any]) -> dict[str, Any]:
-    """Advance DayTrader task by one step."""
-
-    if state.get("complete") is True:
-        return state
-    steps_taken = state.get("steps_taken", 0)
-    target_rounds = state.get("target_rounds", 0)
-    if not isinstance(steps_taken, int) or not isinstance(target_rounds, int):
-        raise ValueError("daytrader state steps/rounds must be integers.")
-    state["steps_taken"] = steps_taken + 1
-    state["rounds_completed"] = state["steps_taken"] // 2
-    if state["rounds_completed"] >= target_rounds:
-        state["complete"] = True
+    """No-op: rounds_completed and complete are updated by phase transitions in the controller."""
     return state
 
 
@@ -256,6 +247,71 @@ def daytrader_settle_group_pool(
             },
         )
     state.buffers[_GROUP_POOL_KEY] = {}
+
+
+def daytrader_snapshot_round_start_money(state: Any) -> None:
+    """Record each participant's current money as the baseline for the next round's earnings calculation."""
+    private_participants = state.buffers.get(_PRIVATE_KEY)
+    if not isinstance(private_participants, dict):
+        return
+    state.buffers[_ROUND_START_MONEY_KEY] = {
+        agent_id: float(info.get("money", 0.0))
+        for agent_id, info in private_participants.items()
+        if isinstance(info, dict)
+    }
+
+
+def daytrader_award_round_bonus(
+    state: Any,
+    emit_event: Callable[..., dict[str, Any]],
+) -> None:
+    """Award $90 to the top earner(s) of the just-settled decision round.
+
+    Skipped for round 1. Ties split the bonus equally.
+    """
+    task_state = state.task_state
+    if not isinstance(task_state, dict):
+        return
+    round_index = task_state.get("round_index", 1)
+    if not isinstance(round_index, int) or round_index < 2:
+        return
+    participants = task_state.get("participants", {})
+    if not isinstance(participants, dict) or not participants:
+        return
+    private_participants = state.buffers.get(_PRIVATE_KEY)
+    if not isinstance(private_participants, dict):
+        return
+    starting_money = float(task_state.get("starting_money", 200.0))
+    round_start = state.buffers.get(_ROUND_START_MONEY_KEY, {})
+
+    earnings: dict[str, float] = {}
+    for agent_id in participants:
+        current = float(private_participants.get(agent_id, {}).get("money", 0.0)
+                        if isinstance(private_participants.get(agent_id), dict) else 0.0)
+        baseline = float(round_start.get(agent_id, starting_money))
+        earnings[agent_id] = current - baseline
+
+    max_earning = max(earnings.values())
+    winners = sorted(a for a, e in earnings.items() if e == max_earning)
+    bonus_each = int(_ROUND_BONUS // len(winners))
+
+    for winner in winners:
+        me = private_participants.get(winner)
+        if not isinstance(me, dict):
+            continue
+        me["money"] = float(me.get("money", 0.0)) + bonus_each
+        emit_event(
+            event_type="round_bonus_awarded",
+            actor_id=winner,
+            visibility="public",
+            payload={
+                "round_index": round_index,
+                "bonus": bonus_each,
+                "earnings_this_round": earnings[winner],
+                "winners": winners,
+                "money_after": me["money"],
+            },
+        )
 
 
 DAYTRADER_TASK = TaskDefinition(

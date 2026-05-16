@@ -25,6 +25,14 @@
 - You receive updated state and visible events regularly.
 - Use recent failures/rejections to avoid repeating invalid actions.
 
+<ACTION PRIORITY SEQUENCE>
+Each turn, check in this order and take the FIRST action that applies:
+1. **trade_response (accept)** — check `task_state.pending_offers`. If any offer has `target_id == your agent_id` and you can fulfill it (for a buy offer: you have the requested shape in inventory; for a sell offer: you can afford the price), before accepting, check if the offer price matches the agreement with your most recent conversation with that participant. Only accept when the price is consistent with your plan and agreement; otherwise, renegotiate through messaging.
+2. **fulfill_order** — if your inventory already contains all shapes needed for one or more of your tasks, do this immediately.
+3. **produce_shape** — if your inventory is missing shapes you need AND you have not hit the production cap, produce your specialty shape.
+4. **communicate** — if you need a shape from a specific participant and have not yet reached an agreement, send them a direct message first to coordinate price and availability before placing a formal offer. Also use communicate to respond to incoming messages or negotiate an active offer. Avoid repeating the same message if you have already asked and received no reply.
+5. **propose_trade_offer** — once you have confirmed via communication (or can infer from prior accepted trades) that a participant has the shape and is willing to trade, place a formal buy or sell offer. You may also place an offer without prior chat if the other party's availability is clear from the current state.
+
 <ACTION PLANNING AND RESPONSES>
 - Plan strategically using current state, past events, and pending offers.
 - Choose exactly one action each response.

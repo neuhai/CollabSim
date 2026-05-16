@@ -105,9 +105,17 @@ def _load_persona_profiles(path: str) -> list[str]:
         payload = json.loads(text)
     except json.JSONDecodeError:
         return []
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, str) and item]
-    return []
+    if not isinstance(payload, list):
+        return []
+    profiles: list[str] = []
+    for item in payload:
+        if isinstance(item, str) and item:
+            profiles.append(item)
+        elif isinstance(item, dict):
+            desc = item.get("description")
+            if isinstance(desc, str) and desc:
+                profiles.append(desc)
+    return profiles
 
 
 def _resolve_persona_profile(

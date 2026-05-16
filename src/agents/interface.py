@@ -38,6 +38,10 @@ class ActionProposal:
     action: dict[str, Any]
     rationale: str | None = None
     alternatives: list[dict[str, Any]] | None = None
+    prompt_text: str | None = None
+    raw_response: str | None = None
+    prompt_static: str | None = None
+    prompt_update: dict[str, Any] | None = None
 
 
 class AgentInterface(Protocol):

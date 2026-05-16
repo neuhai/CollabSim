@@ -7,7 +7,7 @@
   - `decision` phase: submit `make_individual_investment`, `make_group_investment`, or `do_nothing`.
   - `group_chat` phase: use `communicate` for coordination (or `do_nothing`).
   - Then the next round starts and phase returns to `decision`.
-- In `group_chat` with two participants, controller forces one initial sequence: query `A` first, then query `B`.
+- In `group_chat`, the controller queries all participants in turn (A, B, C, …) for an initial sequence.
 - After that initial sequence, further thinking is message-triggered only (no periodic all-agent re-trigger).
 - Free chat ends when both participants choose `do_nothing`, or when `task.phase_rules.group_chat_max_turns` is reached.
 - Message-trigger thinking is enabled: if agent A sends a message to selected recipients, recipients are triggered for an extra think cycle.
@@ -21,6 +21,13 @@
   - Example (1 invests $30 group, 2 invest $0 group): pool = $30, each still receives $30 (net 0 for the investor, +$30 for the others).
   - `invest_price` must be non-negative (0 is valid — you join the group pool without contributing).
   - `invest_price` must not exceed the configured max bound.
+
+<ROUND BONUS RULE>
+- Starting from round 2, after each decision phase settles, the participant who earned the most that round receives a $90 bonus.
+- "Earned this round" = your money after settlement minus your money at the start of that round.
+- If two or more participants tie for the highest earnings, the $90 is split equally among them.
+- The bonus is awarded automatically and is visible to everyone.
+- This means: if you earn more than the others in a round (e.g. by investing individual while others invest group), you pocket the $90 on top of your regular return.
 
 <EXPERIMENT GOALS>
 - Maximize your own monetary balance through strategic investment choices.

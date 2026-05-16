@@ -1,5 +1,5 @@
 experiment:
-  id: "daytrader_v1"
+  id: "daytrader_t10"
   seed: 116
 
 prompts:
@@ -19,19 +19,19 @@ agents:
     model:
       provider: "azure"
       name: "gpt-5.3-codex"
-      temperature: 0.0
+      temperature: 1.0
   - id: "B"
     role: "investor"
     model:
       provider: "azure"
       name: "gpt-5.3-codex"
-      temperature: 0.0
+      temperature: 1.0
   - id: "C"
     role: "investor"
     model:
       provider: "azure"
       name: "gpt-5.3-codex"
-      temperature: 0.0
+      temperature: 1.0
 
 action_space:
   enabled: ["communicate", "make_individual_investment", "make_group_investment", "do_nothing"]
@@ -61,9 +61,9 @@ protocol:
 probe:
   cadence: "per_action"
   templates: ["grounding_v1", "coordination_v1"]
-  questions_path: "prompts/interview_questions_shape_factory_daytrader.json"
+  questions_path: "prompts/interview_questions.json"
 
 logging:
   trace_schema_version: "v0"
-  output_dir: "experiments/daytrader_v1"
+  output_dir: "experiments/daytrader_t10"
   observation_events: true

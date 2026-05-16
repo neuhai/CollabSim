@@ -20,6 +20,7 @@ from src.data.events import EventValidationError, validate_event
 from src.data.logging import (
     RunPaths,
     append_jsonl,
+    append_trace,
     build_run_manifest,
     log_probe_records,
     write_metrics,
@@ -29,7 +30,7 @@ from src.data.logging import (
 from src.probe.probe import ProbeResponse
 from src.probe.registry import ProbeRegistry, ProbeValidationError
 from src.tasks import NOOP_TASK
-from src.tasks.daytrader import daytrader_settle_group_pool
+from src.tasks.daytrader import daytrader_settle_group_pool, daytrader_award_round_bonus, daytrader_snapshot_round_start_money
 from src.tasks.registry import TaskRegistry
 from src.utils.env import load_text_file
 
@@ -170,6 +171,7 @@ class ExperimentController:
         self._turn_rng = random.Random(self._turn_order_seed())
         self.event_listener: Callable[[dict[str, Any]], None] | None = None
         self.runtime_listener: Callable[[str, dict[str, Any]], None] | None = None
+        self._trace_seen_agents: set[str] = set()
 
     def run(self, max_steps: int | None = None) -> ExperimentState:
         """Run the controller loop up to max_steps or until task complete."""
@@ -276,6 +278,8 @@ class ExperimentController:
         self._pending_realtime_message_queue = []
         self.state.sim_time_ms = 0
         self.state.observation_cache.clear()
+        time_mode_noop_cycle_target = self._noop_consecutive_cycles_target()
+        time_mode_noop_streak = 0
         for agent_id in self.state.agents.keys():
             self._set_agent_status(agent_id, "idle")
 
@@ -445,6 +449,24 @@ class ExperimentController:
                         hidden_profile_discussion_noop_streak = 0
                 if self._task_type() == "daytrader" and self._daytrader_phase() == "decision":
                     daytrader_decision_phase_queried = True
+                if (
+                    time_mode_noop_cycle_target is not None
+                    and self._task_type() not in ("hidden_profile", "daytrader")
+                ):
+                    all_agents_in_cycle = len(idle_agents) == len(agent_ids)
+                    all_noop = (
+                        all_agents_in_cycle
+                        and bool(action_types)
+                        and all(v == "do_nothing" for v in action_types.values())
+                    )
+                    if all_noop:
+                        time_mode_noop_streak += 1
+                    else:
+                        time_mode_noop_streak = 0
+                    if time_mode_noop_streak >= time_mode_noop_cycle_target:
+                        next_cycle_at += interval_sec
+                        self._flush_logs()
+                        break
                 next_cycle_at += interval_sec
                 self._flush_logs()
                 continue
@@ -852,6 +874,27 @@ class ExperimentController:
                 **self._daytrader_runtime_fields(),
             },
         )
+        if self.run_paths is not None:
+            from datetime import datetime, timezone
+            _rr = getattr(proposal, "raw_response", None) or (proposal.get("raw_response") if isinstance(proposal, dict) else None)
+            _action = getattr(proposal, "action", None) or (proposal.get("action") if isinstance(proposal, dict) else None)
+            _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
+            _ps = getattr(proposal, "prompt_static", None) or (proposal.get("prompt_static") if isinstance(proposal, dict) else None)
+            _pu = getattr(proposal, "prompt_update", None) or (proposal.get("prompt_update") if isinstance(proposal, dict) else None)
+            _first_time = agent_id not in self._trace_seen_agents
+            self._trace_seen_agents.add(agent_id)
+            _input: dict[str, Any] = {"static": _ps.splitlines(), "update": _pu} if _first_time and isinstance(_ps, str) else {"update": _pu}
+            append_trace(self.run_paths.trace_path, {
+                "step_index": self.state.step_index,
+                "agent_id": agent_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "input": _input,
+                "output": {
+                    "raw": _rr,
+                    "action": _action,
+                    "rationale": _rationale,
+                },
+            })
         return proposal
 
     def _finalize_time_proposal(
@@ -1323,6 +1366,23 @@ class ExperimentController:
                 "step_index": self.state.step_index,
             },
         )
+        if self.run_paths is not None:
+            from datetime import datetime, timezone
+            _rr = getattr(proposal, "raw_response", None) or (proposal.get("raw_response") if isinstance(proposal, dict) else None)
+            _action = getattr(proposal, "action", None) or (proposal.get("action") if isinstance(proposal, dict) else None)
+            _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
+            _ps = getattr(proposal, "prompt_static", None) or (proposal.get("prompt_static") if isinstance(proposal, dict) else None)
+            _pu = getattr(proposal, "prompt_update", None) or (proposal.get("prompt_update") if isinstance(proposal, dict) else None)
+            _first_time = agent_id not in self._trace_seen_agents
+            self._trace_seen_agents.add(agent_id)
+            _input: dict[str, Any] = {"static": _ps.splitlines(), "update": _pu} if _first_time and isinstance(_ps, str) else {"update": _pu}
+            append_trace(self.run_paths.trace_path, {
+                "step_index": self.state.step_index,
+                "agent_id": agent_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "input": _input,
+                "output": {"raw": _rr, "action": _action, "rationale": _rationale},
+            })
         self._capture_agent_memory(agent_id, agent)
         if isinstance(proposal, ActionProposal):
             action = proposal.action
@@ -1936,6 +1996,21 @@ class ExperimentController:
                 "step_index": self.state.step_index,
             },
         )
+        if self.run_paths is not None:
+            from datetime import datetime, timezone
+            _pt = getattr(proposal, "prompt_text", None) or (proposal.get("prompt_text") if isinstance(proposal, dict) else None)
+            _rr = getattr(proposal, "raw_response", None) or (proposal.get("raw_response") if isinstance(proposal, dict) else None)
+            _action = getattr(proposal, "action", None) or (proposal.get("action") if isinstance(proposal, dict) else None)
+            _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
+            _first_time = agent_id not in self._trace_seen_agents
+            self._trace_seen_agents.add(agent_id)
+            append_trace(self.run_paths.trace_path, {
+                "step_index": self.state.step_index,
+                "agent_id": agent_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "input": {"prompt": (_pt.splitlines() if isinstance(_pt, str) else _pt) if _first_time else None},
+                "output": {"raw": _rr, "action": _action, "rationale": _rationale},
+            })
         self._set_agent_status(agent_id, "idle")
         self._capture_agent_memory(agent_id, agent)
         actions, context_payload = self._extract_actions_from_proposal(proposal)
@@ -2066,8 +2141,22 @@ class ExperimentController:
             validated_actions.append((actor_id, processed))
             before_events = len(self.state.event_log)
             self._apply_action(processed, actor_id)
-            if self._has_new_update_map_rejection(actor_id, start_index=before_events):
+            was_rejected = self._has_new_update_map_rejection(actor_id, start_index=before_events)
+            if was_rejected:
                 rejected_actors.add(actor_id)
+            elif processed.get("type") == "update_map_progress" and self.run_paths is not None:
+                from datetime import datetime, timezone
+                participants = self.state.task_state.get("participants", {})
+                follower_data = participants.get(actor_id, {})
+                map_text = follower_data.get("map_working_text")
+                if isinstance(map_text, str):
+                    append_trace(self.run_paths.trace_path, {
+                        "type": "map_snapshot",
+                        "step_index": self.state.step_index,
+                        "agent_id": actor_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "map": [""] + map_text.splitlines(),
+                    })
         had_non_noop = any(action.get("type") != "do_nothing" for _, action in validated_actions)
         return bool(validated_actions), had_non_noop, validated_actions, rejected_actors
 
@@ -2336,6 +2425,18 @@ class ExperimentController:
             )
         return observation
 
+    def _apply_task_timing_filter(self, task_state: dict[str, Any]) -> dict[str, Any]:
+        task_type = task_state.get("task_type")
+        if task_type == "maptask":
+            return task_state
+        if task_type == "shapefactory":
+            patched = {k: v for k, v in task_state.items() if k not in ("target_steps", "steps_taken")}
+            patched["elapsed_sec"] = round(self.state.sim_time_ms / 1000, 1)
+            return patched
+        if task_type in ("daytrader", "hidden_profile"):
+            return {k: v for k, v in task_state.items() if k not in ("target_steps", "steps_taken")}
+        return task_state
+
     def _filter_state_for_agent(self, snapshot: dict[str, Any], agent_id: str) -> dict[str, Any]:
         self._apply_visibility_overrides_from_config(agent_id)
         visibility = self.state.visibility_map.get(agent_id)
@@ -2347,6 +2448,7 @@ class ExperimentController:
                 task_patched = self._apply_private_fact_visibility(task_raw, agent_id)
                 task_patched = self._apply_maptask_canvas_visibility(task_patched, agent_id)
                 task_patched = self._apply_shapefactory_participant_visibility(task_patched, agent_id)
+                task_patched = self._apply_task_timing_filter(task_patched)
                 if task_patched is not task_raw:
                     return {**snapshot, "task_state": task_patched}
             return snapshot
@@ -2357,6 +2459,7 @@ class ExperimentController:
                 section_value = self._apply_private_fact_visibility(section_value, agent_id)
                 section_value = self._apply_maptask_canvas_visibility(section_value, agent_id)
                 section_value = self._apply_shapefactory_participant_visibility(section_value, agent_id)
+                section_value = self._apply_task_timing_filter(section_value)
             allowed = visibility.get(section, []) if isinstance(visibility, dict) else []
             if not isinstance(allowed, list) or not allowed:
                 allowed = defaults.get(section, []) if isinstance(defaults, dict) else []
@@ -3263,23 +3366,22 @@ class ExperimentController:
         return "decision"
 
     def _daytrader_group_chat_bootstrap_targets(self, agent_ids: list[str]) -> list[str]:
-        ordered = [agent_id for agent_id in sorted(agent_ids) if isinstance(agent_id, str) and agent_id]
-        if len(ordered) <= 2:
-            return ordered
-        return ordered[:2]
+        return [agent_id for agent_id in sorted(agent_ids) if isinstance(agent_id, str) and agent_id]
 
     def _enqueue_realtime_trigger(self, agent_id: str, phase_lock: str | None = None) -> None:
         if not isinstance(agent_id, str) or not agent_id:
             return
         normalized_phase_lock = phase_lock if phase_lock in {"decision", "group_chat"} else None
-        self._pending_realtime_message_queue = [
-            entry
+        # Preserve existing queue position so no agent is perpetually bumped to the end
+        # when multiple others broadcast to it simultaneously.
+        already_queued = any(
+            isinstance(entry, dict) and entry.get("agent_id") == agent_id
             for entry in self._pending_realtime_message_queue
-            if not (isinstance(entry, dict) and entry.get("agent_id") == agent_id)
-        ]
-        self._pending_realtime_message_queue.append(
-            {"agent_id": agent_id, "daytrader_phase_lock": normalized_phase_lock}
         )
+        if not already_queued:
+            self._pending_realtime_message_queue.append(
+                {"agent_id": agent_id, "daytrader_phase_lock": normalized_phase_lock}
+            )
 
     def _ensure_daytrader_freechat_bootstrap(self, validated_actions: dict[str, dict[str, Any]]) -> None:
         if self._task_type() != "daytrader":
@@ -3360,6 +3462,8 @@ class ExperimentController:
             if pending:
                 return
             daytrader_settle_group_pool(self.state, self._emit_event)
+            daytrader_award_round_bonus(self.state, self._emit_event)
+            daytrader_snapshot_round_start_money(self.state)
             task_state["phase"] = "group_chat"
             task_state["phase_step_in_round"] = 2
             task_state["group_chat_turns"] = 0
@@ -3386,7 +3490,13 @@ class ExperimentController:
         if not isinstance(round_index, int) or round_index <= 0:
             round_index = 1
         round_index += 1
+        rounds_completed = round_index - 1
         task_state["round_index"] = round_index
+        task_state["rounds_completed"] = rounds_completed
+        task_state["steps_taken"] = rounds_completed * 2
+        target_rounds = task_state.get("target_rounds", 0)
+        if isinstance(target_rounds, int) and rounds_completed >= target_rounds:
+            task_state["complete"] = True
         task_state["phase"] = "decision"
         task_state["phase_step_in_round"] = 1
         task_state["decision_pending_agents"] = list(agent_ids)

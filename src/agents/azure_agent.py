@@ -51,30 +51,34 @@ class AzureOpenAIAgent:
         _ = state
 
     def context_update(self, observation: Observation) -> ActionProposal:
-        prompt = self._build_action_prompt(observation)
+        prompt, prompt_static, prompt_update = self._build_action_prompt(observation)
         text = self._call_azure_openai(prompt)
         parsed = _parse_json(text)
         if not parsed:
             action = self._fallback_action("parse_failure")
-            return ActionProposal(action=action, rationale="Model output was not valid JSON.")
+            return ActionProposal(action=action, rationale="Model output was not valid JSON.", prompt_text=prompt, raw_response=text, prompt_static=prompt_static, prompt_update=prompt_update)
         rationale = parsed.get("rationale") if isinstance(parsed, dict) else None
         if isinstance(parsed, dict):
             raw_actions = parsed.get("actions")
             if isinstance(raw_actions, list):
                 actions = self._normalize_actions(raw_actions)
                 if len(actions) == 1:
-                    return ActionProposal(action=actions[0], rationale=rationale if isinstance(rationale, str) else None)
+                    return ActionProposal(action=actions[0], rationale=rationale if isinstance(rationale, str) else None, prompt_text=prompt, raw_response=text, prompt_static=prompt_static, prompt_update=prompt_update)
                 if len(actions) > 1:
                     return {
                         "actions": actions,
                         "rationale": rationale if isinstance(rationale, str) else None,
+                        "prompt_text": prompt,
+                        "raw_response": text,
+                        "prompt_static": prompt_static,
+                        "prompt_update": prompt_update,
                     }
         action = parsed.get("action") if isinstance(parsed, dict) else None
         if not isinstance(action, dict):
             fallback = self._fallback_action("missing_action")
-            return ActionProposal(action=fallback, rationale=rationale if isinstance(rationale, str) else "No action field in JSON.")
+            return ActionProposal(action=fallback, rationale=rationale if isinstance(rationale, str) else "No action field in JSON.", prompt_text=prompt, raw_response=text, prompt_static=prompt_static, prompt_update=prompt_update)
         action = self._normalize_action(action)
-        return ActionProposal(action=action, rationale=rationale if isinstance(rationale, str) else None)
+        return ActionProposal(action=action, rationale=rationale if isinstance(rationale, str) else None, prompt_text=prompt, raw_response=text, prompt_static=prompt_static, prompt_update=prompt_update)
 
     def propose_action(self, observation: Observation) -> ActionProposal:
         """Backward-compatible alias for context_update."""
@@ -100,22 +104,22 @@ class AzureOpenAIAgent:
             structured_fields=structured_fields if isinstance(structured_fields, dict) else None,
         )
 
-    def _build_action_prompt(self, observation: Observation) -> str:
+    def _build_action_prompt(self, observation: Observation) -> tuple[str, str, dict[str, Any]]:
+        """Returns (full_prompt, static_prefix, observation_payload).
+
+        full_prompt is sent to the API unchanged.
+        static_prefix captures agent-level instructions (logged once per agent).
+        observation_payload is the per-turn dynamic data (logged every turn).
+        """
         allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
         decide_reveal = self.decide_reveal or "aggregated"
-        observation_payload = {
+        observation_payload: dict[str, Any] = {
             "agent_id": self.metadata.agent_id,
             "state": observation.state,
             "visible_events": observation.visible_events,
             "memory": observation.memory,
         }
         observation_json = json.dumps(observation_payload, ensure_ascii=False)
-        task_type = _task_type_from_observation(observation)
-        observation_rendered = observation_json
-        observation_label = "Observation"
-        if task_type == "shapefactory":
-            observation_rendered = _summarize_shapefactory_observation(observation_payload)
-            observation_label = "Observation Summary"
         persona_profile = self.persona_profile or "Default collaborative persona."
         persona_prompt = _render_template(self.persona_prompt_template, {"persona_profile": persona_profile})
         protocol_prompt = _render_template(
@@ -128,21 +132,31 @@ class AzureOpenAIAgent:
             self.action_prompt_template,
             {
                 "allowed_actions": allowed,
-                "observation_json": observation_rendered,
+                "observation_json": observation_json,
                 "decide_reveal": decide_reveal,
             },
         )
-        return (
+        static_prefix = (
             f"{self.system_prompt}\n\n"
             f"Your participant id is: {self.metadata.agent_id}\n\n"
             f"{persona_prompt}\n\n"
             f"{self.task_prompt_template}\n\n"
             f"{protocol_prompt}\n\n"
             f"{action_space_prompt}\n\n"
-            f"{observation_label}:\n{observation_rendered}\n\n"
+            f"{return_format_prompt}"
+        )
+        full_prompt = (
+            f"{self.system_prompt}\n\n"
+            f"Your participant id is: {self.metadata.agent_id}\n\n"
+            f"{persona_prompt}\n\n"
+            f"{self.task_prompt_template}\n\n"
+            f"{protocol_prompt}\n\n"
+            f"{action_space_prompt}\n\n"
+            f"Observation:\n{observation_json}\n\n"
             f"{return_format_prompt}\n\n"
             f"{action_prompt}"
         )
+        return full_prompt, static_prefix, observation_payload
 
     def _fallback_action(self, reason_code: str = "default") -> dict[str, Any]:
         if "do_nothing" in self.allowed_actions:
@@ -507,7 +521,7 @@ def _summarize_shapefactory_observation(payload: dict[str, Any]) -> str:
     if not isinstance(self_row, dict):
         self_row = {}
     rules = task_state.get("rules") if isinstance(task_state.get("rules"), dict) else {}
-    pending_offers = task_state.get("pending_offers")
+    pending_offers = task_state.get("pending_offers") if isinstance(task_state.get("pending_offers"), list) else []
     lines = [f"You are agent {agent_id} in ShapeFactory."]
     specialty = self_row.get("specialty")
     if isinstance(specialty, str) and specialty:
@@ -521,7 +535,18 @@ def _summarize_shapefactory_observation(payload: dict[str, Any]) -> str:
         lines.append(f"Your inventory: {inv_items or 'empty'}.")
     tasks = self_row.get("tasks")
     if isinstance(tasks, list):
-        lines.append(f"Your pending order count: {len(tasks)}.")
+        if tasks:
+            task_lines = []
+            for i, t in enumerate(tasks):
+                if not isinstance(t, dict):
+                    continue
+                shapes = t.get("shapes", {})
+                reward = t.get("reward")
+                shape_str = ", ".join(f"{s}x{q}" for s, q in shapes.items()) if isinstance(shapes, dict) else str(shapes)
+                task_lines.append(f"  order[{i}]: needs {shape_str}, reward={reward}")
+            lines.append(f"Your pending orders ({len(tasks)}):\n" + "\n".join(task_lines))
+        else:
+            lines.append("Your pending orders: none.")
     production_number = self_row.get("production_number")
     max_production = rules.get("max_production_num")
     if isinstance(production_number, int) and isinstance(max_production, int):
@@ -535,8 +560,26 @@ def _summarize_shapefactory_observation(payload: dict[str, Any]) -> str:
             peer_bits.append(f"{pid}:{peer_specialty}")
     if peer_bits:
         lines.append("Other participants (public specialties only): " + ", ".join(peer_bits) + ".")
-    if isinstance(pending_offers, list):
-        lines.append(f"Pending offers in market: {len(pending_offers)}.")
+    # Show offers targeting me (actionable: I need to respond to these)
+    offers_targeting_me = [o for o in pending_offers if isinstance(o, dict) and o.get("to") == agent_id]
+    if offers_targeting_me:
+        lines.append(f"Offers targeting YOU (respond with trade_response):")
+        for o in offers_targeting_me:
+            lines.append(f"  id={o.get('id')} type={o.get('offer_type')} shape={o.get('shape')} qty={o.get('quantity')} price={o.get('price_per_unit')} from={o.get('from')}")
+    else:
+        lines.append("Offers targeting you: none.")
+    # Show my own pending offers
+    my_offers = [o for o in pending_offers if isinstance(o, dict) and o.get("from") == agent_id]
+    if my_offers:
+        lines.append(f"Your open offers (cancel with cancel_trade_offer if stale):")
+        for o in my_offers:
+            lines.append(f"  id={o.get('id')} type={o.get('offer_type')} shape={o.get('shape')} qty={o.get('quantity')} price={o.get('price_per_unit')} to={o.get('to')}")
+    else:
+        lines.append("Your open offers: none.")
+    # Show other market offers (context only)
+    other_offers = [o for o in pending_offers if isinstance(o, dict) and o.get("from") != agent_id and o.get("to") != agent_id]
+    if other_offers:
+        lines.append(f"Other market offers ({len(other_offers)} total — for context only).")
     recent_events = payload.get("visible_events")
     if isinstance(recent_events, list) and recent_events:
         tail = recent_events[-5:]
