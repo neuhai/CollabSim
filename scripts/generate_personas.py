@@ -22,6 +22,12 @@ from pathlib import Path
 AGE_RANGES = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
 
 GENDERS = ["male", "female", "non-binary"]
+# Approximate US adult distribution (~49.5% / ~49.5% / ~1% non-binary; Pew 2022).
+GENDER_WEIGHTS: dict[str, float] = {
+    "male": 49.5,
+    "female": 49.5,
+    "non-binary": 1.0,
+}
 
 EDUCATION_LEVELS = [
     "less than high school",
@@ -192,19 +198,83 @@ def _build_description(attrs: dict) -> str:
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
 
+def sample_gender(rng: random.Random) -> str:
+    """Sample gender with population-approximate weights (not uniform 1:1:1)."""
+    return rng.choices(
+        GENDERS,
+        weights=[GENDER_WEIGHTS[g] for g in GENDERS],
+        k=1,
+    )[0]
+
+
+def _default_min_non_binary(pool_size: int) -> int:
+    """Floor for non-binary count: at least 1 when the pool is not tiny."""
+    if pool_size < 5:
+        return 0
+    return 1
+
+
+def _target_non_binary_count(pool_size: int, min_non_binary: int) -> int:
+    """Target non-binary slots: population rate (~1%), but never below ``min_non_binary``."""
+    weight_sum = sum(GENDER_WEIGHTS[g] for g in GENDERS)
+    rate = GENDER_WEIGHTS["non-binary"] / weight_sum
+    expected = round(pool_size * rate)
+    return max(min_non_binary, expected)
+
+
+def assign_genders_for_pool(
+    rng: random.Random,
+    pool_size: int,
+    *,
+    min_non_binary: int | None = None,
+) -> list[str]:
+    """Assign genders for a pool using population weights, with a non-binary floor."""
+    if pool_size <= 0:
+        return []
+    floor = _default_min_non_binary(pool_size) if min_non_binary is None else min_non_binary
+    target_nb = _target_non_binary_count(pool_size, floor)
+
+    genders = [sample_gender(rng) for _ in range(pool_size)]
+    nb_count = genders.count("non-binary")
+    if nb_count < target_nb:
+        candidates = [i for i, g in enumerate(genders) if g != "non-binary"]
+        rng.shuffle(candidates)
+        for i in candidates[: target_nb - nb_count]:
+            genders[i] = "non-binary"
+    return genders
+
+
+def resample_pool_genders(
+    pool: list[dict],
+    seed: int,
+    *,
+    min_non_binary: int | None = None,
+) -> None:
+    """Reassign genders in an existing persona pool in place."""
+    rng = random.Random(seed)
+    genders = assign_genders_for_pool(rng, len(pool), min_non_binary=min_non_binary)
+    for persona, gender in zip(pool, genders):
+        persona["gender"] = gender
+
+
 def _sample_big_five(rng: random.Random) -> dict[str, str]:
     """Sample each Big Five dimension independently at high or low."""
     return {dim: rng.choice(BIG_FIVE_LEVELS) for dim in BIG_FIVE_DIMS}
 
 
-def _sample_one(rng: random.Random, age: str | None = None) -> dict:
+def _sample_one(
+    rng: random.Random,
+    age: str | None = None,
+    *,
+    gender: str | None = None,
+) -> dict:
     if age is None:
         age = rng.choice(AGE_RANGES)
     occ      = rng.choice(OCCUPATION_BY_AGE[age])
     edu_pool = EDUCATION_BY_AGE_OCC.get((age, occ), ["high school diploma", "some college", "bachelor's degree"])
     edu      = rng.choice(edu_pool)
     income   = rng.choice(INCOME_BY_OCC.get(occ, INCOME_LEVELS))
-    gender   = rng.choice(GENDERS)
+    gender   = gender if gender is not None else sample_gender(rng)
     big_five = _sample_big_five(rng)
 
     attrs: dict = {
@@ -219,7 +289,12 @@ def _sample_one(rng: random.Random, age: str | None = None) -> dict:
     return attrs
 
 
-def generate_pool(count: int, seed: int) -> list[dict]:
+def generate_pool(
+    count: int,
+    seed: int,
+    *,
+    min_non_binary: int | None = None,
+) -> list[dict]:
     """Generate `count` personas stratified over age ranges.
 
     Age ranges are covered in round-robin order for the first min(count, 6*k)
@@ -229,10 +304,11 @@ def generate_pool(count: int, seed: int) -> list[dict]:
     # Build age strata list: cycle through AGE_RANGES until we have `count` slots
     age_slots = (AGE_RANGES * ((count // len(AGE_RANGES)) + 1))[:count]
     rng.shuffle(age_slots)
+    gender_slots = assign_genders_for_pool(rng, count, min_non_binary=min_non_binary)
 
     pool: list[dict] = []
-    for age in age_slots:
-        pool.append(_sample_one(rng, age=age))
+    for age, gender in zip(age_slots, gender_slots):
+        pool.append(_sample_one(rng, age=age, gender=gender))
     return pool
 
 
@@ -242,10 +318,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--count", type=int, default=30,  help="Number of personas (default: 30)")
     parser.add_argument("--seed",  type=int, default=42,  help="Random seed (default: 42)")
+    parser.add_argument(
+        "--min-non-binary",
+        type=int,
+        default=None,
+        help="Minimum non-binary personas (default: 1 when count>=5, else 0)",
+    )
     parser.add_argument("--out",   type=str, default="prompts/persona_profiles.json", help="Output path")
     args = parser.parse_args()
 
-    pool = generate_pool(args.count, args.seed)
+    pool = generate_pool(args.count, args.seed, min_non_binary=args.min_non_binary)
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -256,15 +338,21 @@ def main() -> None:
 
     # ── Summary stats ──
     age_counts: dict[str, int] = {}
+    gender_counts: dict[str, int] = {}
     bf_counts: dict[str, dict[str, int]] = {dim: {"high": 0, "low": 0} for dim in BIG_FIVE_DIMS}
     for p in pool:
         age_counts[p["age_range"]] = age_counts.get(p["age_range"], 0) + 1
+        gender_counts[p["gender"]] = gender_counts.get(p["gender"], 0) + 1
         for dim in BIG_FIVE_DIMS:
             bf_counts[dim][p["big_five"][dim]] += 1
 
     print("  Age range breakdown:")
     for a in AGE_RANGES:
         print(f"    {a:<8} {age_counts.get(a, 0)}")
+
+    print("\n  Gender breakdown:")
+    for g in GENDERS:
+        print(f"    {g:<12} {gender_counts.get(g, 0)}")
 
     print("\n  Big Five high/low breakdown:")
     for dim in BIG_FIVE_DIMS:
