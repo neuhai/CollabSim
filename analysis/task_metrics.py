@@ -27,7 +27,7 @@ def _mean(values: list[float]) -> float | None:
 
 def _message_stats(events: list[dict[str, Any]], actor_id: str | None = None
                    ) -> dict[str, float | None]:
-    """Count messages and compute average length from message_delivered events."""
+    """Count messages and compute average length (word count as token proxy) from message_delivered events."""
     msgs = [
         e for e in events
         if e.get("event_type") == "message_delivered"
@@ -41,7 +41,24 @@ def _message_stats(events: list[dict[str, Any]], actor_id: str | None = None
             lengths.append(float(len(content.split())))
     return {
         "messages_sent": count,
-        "avg_message_length_words": _mean(lengths),
+        "avg_message_length_tokens": _mean(lengths),
+    }
+
+
+def _run_message_aggregates(
+    events: list[dict[str, Any]], agent_ids: list[str]
+) -> dict[str, float]:
+    """Per-run averages: avg messages sent per agent and avg message length per agent."""
+    counts: list[float] = []
+    lengths: list[float] = []
+    for aid in agent_ids:
+        stats = _message_stats(events, aid)
+        counts.append(stats["messages_sent"])
+        if stats["avg_message_length_tokens"] is not None:
+            lengths.append(stats["avg_message_length_tokens"])
+    return {
+        "avg_messages_sent_per_agent": _mean(counts) or 0.0,
+        "avg_message_length_tokens_per_agent": _mean(lengths) or 0.0,
     }
 
 
@@ -142,6 +159,19 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
 
     msg_stats = _message_stats(trace.events)
     per_run["messages_sent_total"] = msg_stats["messages_sent"]
+    per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
+
+    # Action type distribution (validated actions only)
+    action_counts_by_agent: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    action_counts_total: dict[str, int] = defaultdict(int)
+    for e in trace.events_of_type("action_validated"):
+        aid = e.get("actor_id")
+        action_type = ((e.get("payload") or {}).get("action") or {}).get("type")
+        if isinstance(aid, str) and isinstance(action_type, str):
+            action_counts_by_agent[aid][action_type] += 1
+            action_counts_total[action_type] += 1
+    for action_type, count in action_counts_total.items():
+        per_run[f"action_{action_type}_count"] = float(count)
 
     for aid in trace.agent_ids:
         wealth = wealth_by_agent.get(aid, starting_money)
@@ -149,7 +179,7 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
         prices = trade_prices_by_agent.get(aid, [])
         msgs = _message_stats(trace.events, aid)
         msg_count = msgs["messages_sent"]
-        per_agent[aid] = {
+        agent_data: dict[str, float] = {
             "final_wealth": wealth,
             "wealth_gain": wealth - starting_money,
             "successful_trades": float(trades),
@@ -157,10 +187,12 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
             "min_trade_price": min(prices) if prices else 0.0,
             "max_trade_price": max(prices) if prices else 0.0,
             "messages_sent": msg_count,
-            "avg_message_length_words": msgs["avg_message_length_words"] or 0.0,
-            # trades per message sent — communication efficiency
+            "avg_message_length_tokens": msgs["avg_message_length_tokens"] or 0.0,
             "trade_efficiency": float(trades) / msg_count if msg_count > 0 else 0.0,
         }
+        for action_type, count in action_counts_by_agent.get(aid, {}).items():
+            agent_data[f"action_{action_type}_count"] = float(count)
+        per_agent[aid] = agent_data
 
     return per_run, dict(per_agent)
 
@@ -267,6 +299,18 @@ def _daytrader_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[s
     per_run["avg_group_pool_per_round"] = _mean(pool_totals) or 0.0
     per_run["avg_net_return"] = _mean(net_returns) or 0.0
     per_run["messages_sent_total"] = _message_stats(trace.events)["messages_sent"]
+    per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
+
+    # Winner: agent with highest final balance
+    if trace.agent_ids:
+        winner_id = max(trace.agent_ids, key=lambda aid: per_agent[aid]["final_balance"])
+        per_run["winner"] = winner_id
+
+    # Per-agent message stats
+    for aid in trace.agent_ids:
+        msgs = _message_stats(trace.events, aid)
+        per_agent[aid]["messages_sent"] = msgs["messages_sent"]
+        per_agent[aid]["avg_message_length_tokens"] = msgs["avg_message_length_tokens"] or 0.0
 
     return per_run, {k: dict(v) for k, v in per_agent.items()}
 
@@ -278,31 +322,38 @@ def _daytrader_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[s
 def _hidden_profile_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
     """
     Key metrics:
-      per-agent : initial_vote, final_vote, vote_changed,
-                  messages_sent, avg_message_length_words
-      per-run   : consensus_reached, vote_change_rate,
-                  information_pooling_score (fraction of messages that
-                  contain private candidate info from probe logs),
-                  messages_sent_total
+      per-agent : initial_vote, final_vote, vote_changed, initial_vote_correct,
+                  final_vote_correct, messages_sent, avg_message_length_tokens
+      per-run   : consensus_reached, vote_change_rate, initial_vote_accuracy,
+                  final_vote_accuracy, messages_sent_total
     """
     per_agent: dict[str, dict[str, Any]] = {aid: {} for aid in trace.agent_ids}
     per_run: dict[str, float] = {}
 
-    # Votes
-    for e in trace.events_of_type("hidden_profile_initial_vote_submitted"):
-        aid = e.get("actor_id")
-        choice = (e.get("payload") or {}).get("choice")
-        if isinstance(aid, str) and isinstance(choice, str):
-            per_agent.setdefault(aid, {})["initial_vote"] = choice
+    # Votes come from run_summary.json task_summary (not from events)
+    task_summary = trace.summary.get("task_summary") or {}
+    initial_votes_map: dict[str, str] = task_summary.get("initial_votes") or {}
+    final_votes_map: dict[str, str] = task_summary.get("final_votes") or {}
 
-    for e in trace.events_of_type("hidden_profile_final_vote_submitted"):
-        aid = e.get("actor_id")
-        choice = (e.get("payload") or {}).get("choice")
-        if isinstance(aid, str) and isinstance(choice, str):
-            per_agent.setdefault(aid, {})["final_vote"] = choice
+    for aid in per_agent:
+        if aid in initial_votes_map:
+            per_agent[aid]["initial_vote"] = initial_votes_map[aid]
+        if aid in final_votes_map:
+            per_agent[aid]["final_vote"] = final_votes_map[aid]
+
+    # Correct answer from task config phase_rules (optional)
+    task_cfg = (trace.manifest.get("config") or {}).get("task") or {}
+    phase_rules = task_cfg.get("phase_rules") or {}
+    correct_answer: str | None = phase_rules.get("correct_answer")
+    if isinstance(correct_answer, str):
+        correct_answer = correct_answer.strip()
 
     vote_changed_count = 0
+    initial_correct_count = 0
+    final_correct_count = 0
     final_votes: list[str] = []
+    agent_count = len(per_agent)
+
     for aid, d in per_agent.items():
         iv = d.get("initial_vote")
         fv = d.get("final_vote")
@@ -312,24 +363,35 @@ def _hidden_profile_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, d
             vote_changed_count += 1
         if isinstance(fv, str):
             final_votes.append(fv)
+        if correct_answer is not None:
+            iv_correct = isinstance(iv, str) and iv.lower() == correct_answer.lower()
+            fv_correct = isinstance(fv, str) and fv.lower() == correct_answer.lower()
+            d["initial_vote_correct"] = 1.0 if iv_correct else 0.0
+            d["final_vote_correct"] = 1.0 if fv_correct else 0.0
+            if iv_correct:
+                initial_correct_count += 1
+            if fv_correct:
+                final_correct_count += 1
         msgs = _message_stats(trace.events, aid)
         d["messages_sent"] = msgs["messages_sent"]
-        d["avg_message_length_words"] = msgs["avg_message_length_words"] or 0.0
+        d["avg_message_length_tokens"] = msgs["avg_message_length_tokens"] or 0.0
 
     # Consensus: all final votes identical
     per_run["consensus_reached"] = 1.0 if len(set(final_votes)) == 1 and final_votes else 0.0
-    per_run["vote_change_rate"] = vote_changed_count / len(per_agent) if per_agent else 0.0
+    per_run["vote_change_rate"] = vote_changed_count / agent_count if agent_count > 0 else 0.0
+
+    if correct_answer is not None and agent_count > 0:
+        per_run["initial_vote_accuracy"] = initial_correct_count / agent_count
+        per_run["final_vote_accuracy"] = final_correct_count / agent_count
 
     # Vote distribution
     for candidate in set(final_votes):
         per_run[f"final_votes_for_{candidate}"] = float(final_votes.count(candidate))
 
     per_run["messages_sent_total"] = _message_stats(trace.events)["messages_sent"]
+    per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
 
-    # Information pooling score:
-    # Count how many broadcast messages contain text that references candidate info
-    # that was in private facts (proxied by checking if messages mention candidate
-    # names — a rough but computable signal without NLP).
+    # Candidate mention fractions across all messages
     candidate_mentions: dict[str, int] = defaultdict(int)
     for e in trace.events_of_type("message_delivered"):
         content = ((e.get("payload") or {}).get("content") or "").lower()
@@ -385,6 +447,7 @@ def _maptask_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[str
         per_run["route_score_max"] = float(route_score_max)
         if isinstance(route_score, (int, float)) and route_score_max > 0:
             per_run["route_completion_rate"] = float(route_score) / float(route_score_max)
+            per_run["follower_accuracy"] = float(route_score) / float(route_score_max)
     if isinstance(route_similarity, (int, float)):
         per_run["route_similarity"] = float(route_similarity)
 
@@ -398,6 +461,7 @@ def _maptask_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[str
     total_msgs = msg_stats["messages_sent"]
     if isinstance(route_score, (int, float)) and total_msgs > 0:
         per_run["communication_efficiency"] = float(route_score) / total_msgs
+    per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
 
     for aid in trace.agent_ids:
         msgs = _message_stats(trace.events, aid)
@@ -407,7 +471,7 @@ def _maptask_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[str
         ))
         per_agent[aid] = {
             "messages_sent": msgs["messages_sent"],
-            "avg_message_length_words": msgs["avg_message_length_words"] or 0.0,
+            "avg_message_length_tokens": msgs["avg_message_length_tokens"] or 0.0,
             "map_progress_updates": upd,
         }
 

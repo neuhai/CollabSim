@@ -66,6 +66,9 @@ for cfg in "$ROOT/configs/study_conditions/${TASK}"/*.yml; do
     --run-id "${STAMP}_${slug}" \
     --output-dir "$out" \
     --print-actions \
+    --wandb \
+    --wandb-project "collabsim" \
+    --wandb-run-name "${TASK}_${slug}_${STAMP}" \
     ${CLI_EXTRA+"${CLI_EXTRA[@]}"} 2>&1 | tee -a "$runlog"
   status="${PIPESTATUS[0]}"
   set -e

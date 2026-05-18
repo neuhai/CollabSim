@@ -9,6 +9,7 @@ dependencies = [
     "pyyaml",
     "httpx",
     "litellm>=1.55.0",
+    "wandb>=0.27.0",
 ]
 
 [dependency-groups]

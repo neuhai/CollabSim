@@ -28,7 +28,6 @@ class Observation:
     state: dict[str, Any]
     visible_events: list[dict[str, Any]]
     step_index: int
-    memory: dict[str, Any] | None = None
     game_status: dict[str, Any] | None = None
 
 

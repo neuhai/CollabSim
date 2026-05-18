@@ -77,7 +77,6 @@ protocol:
   agent_trigger_interval_sec: 20
   termination:
     condition: "task_complete"
-  memory_turn_limit: 7
 
 probe:
   cadence: "per_action"

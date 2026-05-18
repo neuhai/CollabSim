@@ -68,7 +68,6 @@ protocol:
     condition: "time_elapsed"
     noop_consecutive_cycles: 3
   max_concurrent_requests: 4
-  memory_turn_limit: 7
 
 probe:
   cadence: "per_agent_n_actions"

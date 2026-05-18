@@ -71,6 +71,23 @@ def main(argv: list[str] | None = None) -> int:
         metavar="T",
         help="Override model.temperature for all agents. Env: COLLABSIM_MODEL_TEMPERATURE.",
     )
+    parser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="Enable Weights & Biases logging.",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        default="collabsim",
+        metavar="PROJECT",
+        help="WandB project name (default: collabsim).",
+    )
+    parser.add_argument(
+        "--wandb-run-name",
+        default=None,
+        metavar="NAME",
+        help="WandB run name (defaults to run_id).",
+    )
     args = parser.parse_args(argv)
 
     load_env_file()
@@ -130,6 +147,9 @@ def main(argv: list[str] | None = None) -> int:
     except ProbeTemplateError as exc:
         print(f"Probe template load failed: {exc}", file=sys.stderr)
         return 1
+    if args.wandb:
+        _wandb_init(args, config)
+
     try:
         controller = build_controller(
             state,
@@ -149,7 +169,10 @@ def main(argv: list[str] | None = None) -> int:
         controller.run(max_steps=args.max_steps)
     except (KeyError, ValueError) as exc:
         print(f"Run failed: {exc}", file=sys.stderr)
+        _wandb_finish()
         return 1
+
+    _wandb_finish()
 
     if args.manifest_path:
         manifest = build_run_manifest(
@@ -354,6 +377,43 @@ def _model_override_requested(
     temperature: float | None,
 ) -> bool:
     return provider is not None or name is not None or temperature is not None
+
+
+def _wandb_init(args: argparse.Namespace, config: dict) -> None:
+    try:
+        import wandb  # type: ignore[import-untyped]
+    except ImportError:
+        print("wandb not installed — skipping WandB logging.", file=sys.stderr)
+        return
+    task_cfg = config.get("task") or {}
+    protocol_cfg = config.get("protocol") or {}
+    agents_cfg = config.get("agents") or []
+    agent_model = next(
+        (a.get("model", {}).get("name") for a in agents_cfg if isinstance(a, dict)), None
+    )
+    wandb.init(
+        project=args.wandb_project,
+        name=args.wandb_run_name or args.run_id,
+        config={
+            "run_id": args.run_id,
+            "task_type": task_cfg.get("type"),
+            "step_mode": protocol_cfg.get("step_mode"),
+            "agent_model": agent_model,
+            "num_agents": len(agents_cfg),
+            "config_path": args.config,
+            **{k: v for k, v in task_cfg.items() if isinstance(v, (str, int, float, bool))},
+        },
+    )
+    print(f"WandB run initialized: {wandb.run.url}", flush=True)
+
+
+def _wandb_finish() -> None:
+    try:
+        import wandb  # type: ignore[import-untyped]
+        if wandb.run is not None:
+            wandb.finish()
+    except ImportError:
+        pass
 
 
 if __name__ == "__main__":

@@ -61,7 +61,6 @@ protocol:
   termination:
     condition: "max_steps"
     noop_consecutive_cycles: 2
-  memory_turn_limit: 7
 
 probe:
   cadence: "per_action"

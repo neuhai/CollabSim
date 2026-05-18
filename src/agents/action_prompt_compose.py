@@ -191,7 +191,6 @@ def compose_action_prompt(
         "agent_id": agent_id,
         "state": observation.state,
         "visible_events": observation.visible_events,
-        "memory": observation.memory,
         "game_status": observation.game_status,
     }
     return full_prompt, static_prefix, observation_payload

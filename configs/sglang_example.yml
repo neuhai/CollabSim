@@ -107,7 +107,6 @@ protocol:
   # requests concurrently.  max_concurrent_requests is still respected as an
   # upper bound on the gather batch size if you want to throttle throughput.
   max_concurrent_requests: 4
-  memory_turn_limit: 7
 
 probe:
   cadence: "per_action"

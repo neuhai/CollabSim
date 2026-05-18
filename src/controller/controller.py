@@ -63,7 +63,6 @@ class ExperimentState:
     agent_status: dict[str, str] = field(default_factory=dict)
     pending_context_updates: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_context_hash: dict[str, str] = field(default_factory=dict)
-    context_memory: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     sim_time_ms: int = 0
 
 
@@ -296,7 +295,6 @@ class ExperimentController:
         daytrader_decision_phase_queried = False
         hidden_profile_final_vote_queried = False
         hidden_profile_final_round_done = False
-        hidden_profile_discussion_noop_streak = 0
 
         while True:
             now = time.monotonic()
@@ -304,14 +302,25 @@ class ExperimentController:
             self.state.sim_time_ms = int(elapsed_sec * 1000)
             if self._task_type() == "hidden_profile":
                 phase = self._hidden_profile_phase()
+                if phase == "discussion":
+                    turns = self.state.task_state.get("discussion_turns", 0)
+                    if not isinstance(turns, int):
+                        turns = 0
+                    hp_discussion_pending = any(
+                        isinstance(e, dict) and e.get("hidden_profile_phase_lock") == "discussion"
+                        for e in self._pending_realtime_message_queue
+                    )
+                    if turns == 0 and not hp_discussion_pending:
+                        for target in sorted(agent_ids):
+                            self._pending_realtime_message_queue.append(
+                                {"agent_id": target, "hidden_profile_phase_lock": "discussion"}
+                            )
                 if phase != previous_hidden_profile_phase:
                     if phase in {"initial", "final"}:
                         next_cycle_at = min(next_cycle_at, now)
                     if phase == "final":
                         hidden_profile_final_vote_queried = False
                         self._pending_realtime_message_queue = []
-                    if phase != "discussion":
-                        hidden_profile_discussion_noop_streak = 0
                 previous_hidden_profile_phase = phase
             if self._task_type() == "daytrader":
                 self._sync_daytrader_round_phase()
@@ -367,6 +376,11 @@ class ExperimentController:
                         trigger_entries = ready_queue_entries[:1]
                         if len(ready_queue_entries) > 1:
                             self._pending_realtime_message_queue = ready_queue_entries[1:] + self._pending_realtime_message_queue
+                    elif self._task_type() == "hidden_profile" and self._hidden_profile_phase() == "discussion":
+                        # Step-based discussion: trigger one agent at a time, preserving queue order.
+                        trigger_entries = ready_queue_entries[:1]
+                        if len(ready_queue_entries) > 1:
+                            self._pending_realtime_message_queue = ready_queue_entries[1:] + self._pending_realtime_message_queue
                     trigger_targets = [entry.get("agent_id") for entry in trigger_entries if isinstance(entry.get("agent_id"), str)]
                     phase_lock_by_agent: dict[str, str] = {}
                     for entry in trigger_entries:
@@ -374,30 +388,11 @@ class ExperimentController:
                         phase_lock = entry.get("daytrader_phase_lock")
                         if isinstance(recipient, str) and phase_lock in {"decision", "group_chat"}:
                             phase_lock_by_agent[recipient] = phase_lock
-                    action_types = self._trigger_idle_agents_parallel(
+                    self._trigger_idle_agents_parallel(
                         trigger_targets,
                         delayed_actions,
                         daytrader_phase_lock_by_agent=phase_lock_by_agent or None,
                     )
-                    if self._task_type() == "hidden_profile":
-                        phase = self._hidden_profile_phase()
-                        if phase == "discussion":
-                            resolved_actions = [value for value in action_types.values() if isinstance(value, str)]
-                            if resolved_actions and all(value == "do_nothing" for value in resolved_actions):
-                                hidden_profile_discussion_noop_streak += 1
-                            else:
-                                hidden_profile_discussion_noop_streak = 0
-                            if hidden_profile_discussion_noop_streak >= 2:
-                                task_state = self.state.task_state
-                                if isinstance(task_state, dict):
-                                    task_state["discussion_force_final"] = True
-                                    task_state["phase"] = "final"
-                                    task_state["discussion_all_do_nothing_streak"] = 2
-                                self._pending_realtime_message_queue = []
-                                hidden_profile_discussion_noop_streak = 0
-                                next_cycle_at = min(next_cycle_at, now)
-                        else:
-                            hidden_profile_discussion_noop_streak = 0
                     self._flush_logs()
                     continue
 
@@ -407,10 +402,14 @@ class ExperimentController:
                     if self._daytrader_phase() == "decision":
                         should_trigger_cycle = not daytrader_decision_phase_queried
                     else:
-                        # In group chat, only bootstrap once (A then B) and then rely on message-triggered thinking.
+                        # In group chat, only bootstrap once and then rely on message-triggered thinking.
                         should_trigger_cycle = False
-                if self._task_type() == "hidden_profile" and self._hidden_profile_phase() == "final":
-                    should_trigger_cycle = not hidden_profile_final_vote_queried
+                if self._task_type() == "hidden_profile":
+                    hp_phase = self._hidden_profile_phase()
+                    if hp_phase == "discussion":
+                        should_trigger_cycle = False
+                    elif hp_phase == "final":
+                        should_trigger_cycle = not hidden_profile_final_vote_queried
                 if not should_trigger_cycle:
                     next_cycle_at += interval_sec
                     continue
@@ -430,25 +429,6 @@ class ExperimentController:
                     self._flush_logs()
                     continue
                 action_types = self._trigger_idle_agents_parallel(idle_agents, delayed_actions)
-                if self._task_type() == "hidden_profile":
-                    current_phase = self._hidden_profile_phase()
-                    if current_phase == "discussion":
-                        resolved_actions = [value for value in action_types.values() if isinstance(value, str)]
-                        if resolved_actions and all(value == "do_nothing" for value in resolved_actions):
-                            hidden_profile_discussion_noop_streak += 1
-                        else:
-                            hidden_profile_discussion_noop_streak = 0
-                        if hidden_profile_discussion_noop_streak >= 2:
-                            task_state = self.state.task_state
-                            if isinstance(task_state, dict):
-                                task_state["discussion_force_final"] = True
-                                task_state["phase"] = "final"
-                                task_state["discussion_all_do_nothing_streak"] = 2
-                            self._pending_realtime_message_queue = []
-                            hidden_profile_discussion_noop_streak = 0
-                            next_cycle_at = min(next_cycle_at, now)
-                    else:
-                        hidden_profile_discussion_noop_streak = 0
                 if self._task_type() == "daytrader" and self._daytrader_phase() == "decision":
                     daytrader_decision_phase_queried = True
                 if (
@@ -641,6 +621,7 @@ class ExperimentController:
         )
         self._apply_action(action, agent_id)
         self._advance_daytrader_phase_from_action(agent_id, action)
+        self._advance_hidden_profile_phase_from_action(agent_id, action)
         self.state.step_index += 1
         self._sync_daytrader_round_phase()
         self.state.observation_cache.clear()
@@ -995,7 +976,6 @@ class ExperimentController:
             )
         if not actions:
             return None
-        self._record_context_memory(agent_id, observation)
         for action in actions:
             normalized = action
             if "actor_id" not in normalized:
@@ -1024,6 +1004,7 @@ class ExperimentController:
         )
         self._apply_action(action, agent_id)
         self._advance_daytrader_phase_from_action(agent_id, action)
+        self._advance_hidden_profile_phase_from_action(agent_id, action)
         self.state.step_index += 1
         self._sync_daytrader_round_phase()
         self.state.observation_cache.clear()
@@ -1101,8 +1082,11 @@ class ExperimentController:
         if self.task_hook is not None:
             self.task_hook(self.state)
         self._maybe_log_probe(had_action)
-        self._schedule_context_updates()
-        self._process_context_updates()
+        if self._task_type() == "daytrader" and self._step_mode() != "time" and self._daytrader_phase() == "group_chat":
+            self._step_daytrader_group_chat_queue()
+        else:
+            self._schedule_context_updates()
+            self._process_context_updates()
         if "_all_agents_noop_cycle" not in self.state.turn_state:
             self.state.turn_state["_all_agents_noop_cycle"] = False
         late_had_action = self.state.turn_state.pop("_had_action_in_context_updates", False) is True
@@ -1252,6 +1236,7 @@ class ExperimentController:
         for actor_id, action in validated_actions:
             self._apply_action(action, actor_id)
             self._advance_daytrader_phase_from_action(actor_id, action)
+            self._advance_hidden_profile_phase_from_action(actor_id, action)
         self._sync_daytrader_round_phase()
         had_non_noop = any(action.get("type") != "do_nothing" for _, action in validated_actions)
         return bool(validated_actions), had_non_noop
@@ -1483,7 +1468,6 @@ class ExperimentController:
             action = {**action, "actor_id": agent_id}
         if "timestamp" not in action:
             action = {**action, "timestamp": self.state.step_index}
-        self._record_context_memory(agent_id, observation)
         return self._process_submitted_action(action, apply_immediately=False)
 
     def _maybe_log_probe(self, had_action: bool, actor_id: str | None = None) -> None:
@@ -1906,7 +1890,6 @@ class ExperimentController:
                 record["template_id"] = template_id
             if construct is not None:
                 record["construct"] = construct
-            self.log_probe(record)
             records.append(record)
         return records
 
@@ -2112,7 +2095,6 @@ class ExperimentController:
             if "timestamp" not in normalized:
                 normalized = {**normalized, "timestamp": self.state.step_index}
             self.state.pending_actions.append(normalized)
-        self._record_context_memory(agent_id, observation)
 
     def _schedule_context_updates(self) -> None:
         if not isinstance(self.state.agents, dict) or not self.state.agents:
@@ -2404,31 +2386,6 @@ class ExperimentController:
         except Exception:
             return None
 
-    def _record_context_memory(self, agent_id: str, observation: Observation) -> None:
-        limit = self._memory_turn_limit()
-        if limit <= 0:
-            return
-        entry = {
-            "step_index": observation.step_index,
-            "state": observation.state,
-            "visible_events": observation.visible_events,
-        }
-        history = self.state.context_memory.setdefault(agent_id, [])
-        history.append(entry)
-        if len(history) > limit:
-            self.state.context_memory[agent_id] = history[-limit:]
-
-    def _memory_turn_limit(self) -> int:
-        if not isinstance(self.config, dict):
-            return 7
-        protocol = self.config.get("protocol", {})
-        if not isinstance(protocol, dict):
-            return 7
-        limit = protocol.get("memory_turn_limit")
-        if isinstance(limit, int) and limit > 0:
-            return limit
-        return 7
-
     def _is_agent_idle(self, agent_id: str) -> bool:
         status = self.state.agent_status.get(agent_id, "idle")
         return status == "idle"
@@ -2536,17 +2493,9 @@ class ExperimentController:
             state=visible_state,
             visible_events=visible_events,
             step_index=self.state.step_index,
-            memory=self._context_memory_for_agent(agent_id),
             game_status=game_status,
         )
 
-    def _context_memory_for_agent(self, agent_id: str) -> dict[str, Any] | None:
-        history = self.state.context_memory.get(agent_id)
-        if not isinstance(history, list) or not history:
-            return None
-        limit = self._memory_turn_limit()
-        trimmed = history[-limit:] if limit > 0 else history
-        return {"turns": copy.deepcopy(trimmed)}
 
     def _get_cached_observation(self, agent_id: str) -> Observation:
         cached = self.state.observation_cache.get(agent_id)
@@ -2558,7 +2507,6 @@ class ExperimentController:
             observation_payload = {
                 "state": copy.deepcopy(observation.state),
                 "visible_events": copy.deepcopy(observation.visible_events),
-                "memory": copy.deepcopy(observation.memory),
             }
             self._emit_event(
                 event_type="observation_built",
@@ -3186,9 +3134,21 @@ class ExperimentController:
         for recipient in recipients:
             if recipient == actor_id and channel == "direct":
                 continue
-            if self._step_mode() == "time":
-                # Real-time mode processes recipients strictly by message arrival order.
-                self._enqueue_realtime_trigger(recipient, phase_lock=daytrader_phase_lock)
+            use_queue = self._step_mode() == "time" or (
+                self._task_type() == "daytrader" and self._daytrader_phase() == "group_chat"
+            )
+            if use_queue:
+                if self._task_type() == "hidden_profile" and self._hidden_profile_phase() == "discussion":
+                    already_queued = any(
+                        isinstance(e, dict) and e.get("agent_id") == recipient
+                        for e in self._pending_realtime_message_queue
+                    )
+                    if not already_queued:
+                        self._pending_realtime_message_queue.append(
+                            {"agent_id": recipient, "hidden_profile_phase_lock": "discussion"}
+                        )
+                else:
+                    self._enqueue_realtime_trigger(recipient, phase_lock=daytrader_phase_lock)
 
     def _apply_propose_action(self, actor_id: str, payload: dict[str, Any]) -> None:
         proposal_id = payload.get("proposal_id")
@@ -3539,6 +3499,31 @@ class ExperimentController:
     def _daytrader_group_chat_bootstrap_targets(self, agent_ids: list[str]) -> list[str]:
         return [agent_id for agent_id in sorted(agent_ids) if isinstance(agent_id, str) and agent_id]
 
+    def _step_daytrader_group_chat_queue(self) -> None:
+        if not self._pending_realtime_message_queue:
+            return
+        seen: set[str] = set()
+        ready: dict[str, Any] | None = None
+        remaining: list[dict[str, Any]] = []
+        for entry in self._pending_realtime_message_queue:
+            if not isinstance(entry, dict):
+                continue
+            agent_id = entry.get("agent_id")
+            if (
+                isinstance(agent_id, str)
+                and agent_id
+                and agent_id not in seen
+                and self._is_agent_idle(agent_id)
+                and ready is None
+            ):
+                ready = entry
+                seen.add(agent_id)
+            else:
+                remaining.append(entry)
+        self._pending_realtime_message_queue = remaining
+        if ready is not None:
+            self._context_update_agent(ready["agent_id"])
+
     def _enqueue_realtime_trigger(self, agent_id: str, phase_lock: str | None = None) -> None:
         if not isinstance(agent_id, str) or not agent_id:
             return
@@ -3804,27 +3789,6 @@ class ExperimentController:
             task_state["phase"] = "final"
             return "final"
 
-        if self._step_mode() != "time":
-            target_steps = task_state.get("target_steps")
-            if not isinstance(target_steps, int) or target_steps <= 1:
-                task_state["phase"] = "discussion"
-                return "discussion"
-            if self.state.step_index >= target_steps:
-                task_state["phase"] = "final"
-                return "final"
-            task_state["phase"] = "discussion"
-            return "discussion"
-
-        elapsed_sec = self._elapsed_time_seconds()
-        discussion_started_at_sec = task_state.get("discussion_started_at_sec")
-        if not isinstance(discussion_started_at_sec, (int, float)):
-            discussion_started_at_sec = elapsed_sec
-            task_state["discussion_started_at_sec"] = discussion_started_at_sec
-
-        duration_sec = self._hidden_profile_discussion_duration_sec()
-        if elapsed_sec >= float(discussion_started_at_sec) + duration_sec:
-            task_state["phase"] = "final"
-            return "final"
         task_state["phase"] = "discussion"
         return "discussion"
 
@@ -3847,12 +3811,40 @@ class ExperimentController:
             return {}
         return phase_rules
 
-    def _hidden_profile_discussion_duration_sec(self) -> float:
+    def _hidden_profile_discussion_max_turns(self) -> int:
         phase_rules = self._hidden_profile_phase_rules()
-        duration_sec = phase_rules.get("discussion_duration_sec")
-        if isinstance(duration_sec, (int, float)) and float(duration_sec) >= 0:
-            return float(duration_sec)
-        return 60.0
+        value = phase_rules.get("discussion_max_turns")
+        if isinstance(value, int) and value > 0:
+            return value
+        return 30
+
+    def _advance_hidden_profile_phase_from_action(self, actor_id: str, action: dict[str, Any]) -> None:
+        if self._task_type() != "hidden_profile":
+            return
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        if self._hidden_profile_phase() != "discussion":
+            return
+        turns = task_state.get("discussion_turns", 0)
+        if not isinstance(turns, int):
+            turns = 0
+        turns += 1
+        task_state["discussion_turns"] = turns
+        max_turns = self._hidden_profile_discussion_max_turns()
+        discussion_pending = any(
+            isinstance(entry, dict) and entry.get("hidden_profile_phase_lock") == "discussion"
+            for entry in self._pending_realtime_message_queue
+        )
+        if discussion_pending and turns < max_turns:
+            return
+        task_state["discussion_force_final"] = True
+        task_state["phase"] = "final"
+        task_state["discussion_turns"] = 0
+        self._pending_realtime_message_queue = [
+            entry for entry in self._pending_realtime_message_queue
+            if not (isinstance(entry, dict) and entry.get("hidden_profile_phase_lock") == "discussion")
+        ]
 
     def _elapsed_time_seconds(self) -> float:
         if self._wall_start_monotonic is None:
@@ -4164,6 +4156,46 @@ class ExperimentController:
             if isinstance(follower_map_text, str) and follower_map_text:
                 follower_map_path = self.run_paths.run_dir / "maptask_follower_working_map.txt"
                 follower_map_path.write_text(follower_map_text, encoding="utf-8")
+        self._wandb_log(per_run, per_agent)
+
+    def _wandb_log(
+        self,
+        per_run: dict[str, Any],
+        per_agent: dict[str, Any],
+    ) -> None:
+        try:
+            import wandb  # type: ignore[import-untyped]
+        except ImportError:
+            return
+        if wandb.run is None:
+            return
+        # Separate numeric metrics from non-numeric (e.g. "winner" string)
+        numeric: dict[str, Any] = {}
+        summary: dict[str, Any] = {}
+        for k, v in per_run.items():
+            if isinstance(v, (int, float)):
+                numeric[k] = v
+            else:
+                summary[k] = v
+        # Per-agent metrics under "agent_<id>/" namespace
+        for agent_id, metrics in per_agent.items():
+            for k, v in metrics.items():
+                if isinstance(v, (int, float)):
+                    numeric[f"agent_{agent_id}/{k}"] = v
+                else:
+                    summary[f"agent_{agent_id}/{k}"] = v
+        wandb.log(numeric)
+        for k, v in summary.items():
+            wandb.run.summary[k] = v
+        # Upload run directory as artifact
+        if self.run_paths is not None:
+            task_type = (self.config or {}).get("task", {}).get("type", "unknown")
+            artifact = wandb.Artifact(
+                name=f"{task_type}_{self.run_id or 'run'}",
+                type="experiment",
+            )
+            artifact.add_dir(str(self.run_paths.run_dir))
+            wandb.log_artifact(artifact)
 
     def _write_manifest(self) -> None:
         if self.run_paths is None or self.config is None or self.run_id is None:
@@ -4349,6 +4381,36 @@ class ExperimentController:
                 for agent_id, data in private.items()
                 if isinstance(data, dict)
             }
+            # Per-round balance matrix: {round_number: {agent_id: balance_at_end_of_round}}
+            participant_ids = list((ts.get("participants") or {}).keys())
+            if participant_ids:
+                n_agents = len(participant_ids)
+                settlements = [
+                    e for e in self.state.event_log
+                    if e.get("event_type") == "group_pool_settled"
+                ]
+                per_round_balances: dict[str, dict[str, float]] = {}
+                for batch_idx, batch_start in enumerate(range(0, len(settlements), n_agents)):
+                    batch = settlements[batch_start:batch_start + n_agents]
+                    round_key = str(batch_idx + 1)
+                    per_round_balances[round_key] = {}
+                    for evt in batch:
+                        aid = evt.get("actor_id")
+                        money = (evt.get("payload") or {}).get("money_after")
+                        if isinstance(aid, str) and isinstance(money, (int, float)):
+                            per_round_balances[round_key][aid] = float(money)
+                for evt in self.state.event_log:
+                    if evt.get("event_type") != "round_bonus_awarded":
+                        continue
+                    p = evt.get("payload") or {}
+                    rnd = p.get("round_index")
+                    aid = evt.get("actor_id")
+                    money = p.get("money_after")
+                    if isinstance(rnd, int) and isinstance(aid, str) and isinstance(money, (int, float)):
+                        round_key = str(rnd)
+                        if round_key in per_round_balances:
+                            per_round_balances[round_key][aid] = float(money)
+                task_summary["per_round_balances"] = per_round_balances
 
         elif task_type == "shapefactory":
             completed_trades = ts.get("completed_trades")

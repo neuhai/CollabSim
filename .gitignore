@@ -12,6 +12,12 @@ env/
 # Local experiment outputs
 experiments/
 
+# WandB local run files
+wandb/
+
+# Log files
+*.log
+
 # Jupyter
 .ipynb_checkpoints/
 

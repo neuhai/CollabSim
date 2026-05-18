@@ -250,15 +250,6 @@ def format_agent_status_update(agent_id: str, observation: Observation) -> str:
             summary = _summarize_event_payload(event)
             lines.append(f"- [{et}] actor={aid}{summary}")
 
-    mem = observation.memory
-    if isinstance(mem, dict) and mem:
-        lines.append("")
-        lines.append("=== Memory (recent context turns) ===")
-        try:
-            lines.append(json.dumps(mem, ensure_ascii=False, indent=2))
-        except (TypeError, ValueError):
-            lines.append(str(mem))
-
     return "\n".join(lines).strip()
 
 
