@@ -49,21 +49,21 @@ task:
   min_trade_price: 15
   max_trade_price: 100
   incentive_money: 60
-  max_production_num: 3
-  shapes_order: 4
-  shapes_types: 3
-  shape_options: ["circle", "square", "triangle"]
+  max_production_num: 6
+  shapes_order: 8
+  shapes_types: 5
+  shape_options: ["circle", "square", "triangle", "rectangle", "diamond"]
   specialties:
     A: "circle"
     B: "square"
     C: "triangle"
-    D: "circle"
-    E: "square"
-    F: "triangle"
-    G: "circle"
-    H: "square"
-    I: "triangle"
-    J: "circle"
+    D: "rectangle"
+    E: "diamond"
+    F: "circle"
+    G: "square"
+    H: "triangle"
+    I: "rectangle"
+    J: "diamond"
 
 protocol:
   turn_taking: "simultaneous"

@@ -23,14 +23,31 @@ def _task_phase_status_lines(observation: Observation) -> list[str]:
     if task_type == "daytrader":
         ri = ts.get("round_index")
         ri_txt = str(ri) if isinstance(ri, int) else "?"
+        target_rounds = ts.get("target_rounds")
+        tr_txt = str(target_rounds) if isinstance(target_rounds, int) else "?"
+        rounds_completed = ts.get("rounds_completed")
+        rc_txt = str(rounds_completed) if isinstance(rounds_completed, int) else "0"
+        phase_rules = ts.get("phase_rules")
+        pr = phase_rules if isinstance(phase_rules, dict) else {}
+        interval = pr.get("discussion_every_n_rounds")
+        if not isinstance(interval, int) or interval <= 0:
+            interval = 5
         lines = [
-            f"DayTrader · round_index={ri_txt} · phase={phase}",
+            f"DayTrader · round {ri_txt} of {tr_txt} · phase={phase} · rounds_completed={rc_txt}",
+            f"Group discussion runs after every {interval} decision rounds (rounds {interval}, {interval * 2}, …).",
         ]
         if phase == "decision":
-            lines.append(
-                "Decision phase: submit make_individual_investment, make_group_investment, or do_nothing only. "
-                "Messaging is not allowed until the group_chat phase begins."
-            )
+            if isinstance(ri, int) and ri > 0 and ri % interval == 0:
+                lines.append(
+                    "Decision phase (discussion block): submit make_individual_investment, "
+                    "make_group_investment, or do_nothing only. Group chat follows when all have acted."
+                )
+            else:
+                next_disc = ((ri - 1) // interval + 1) * interval if isinstance(ri, int) and ri > 0 else interval
+                lines.append(
+                    f"Decision phase: submit make_individual_investment, make_group_investment, or do_nothing only. "
+                    f"Messaging is not allowed until group_chat after round {next_disc}."
+                )
         elif phase == "group_chat":
             lines.append("Group-chat phase: you may use message and do_nothing only.")
         return lines

@@ -62,6 +62,28 @@ def _run_message_aggregates(
     }
 
 
+def _daytrader_run_investment_aggregates(
+    per_agent: dict[str, dict[str, float]], agent_ids: list[str]
+) -> dict[str, float]:
+    """Per-run averages of per-agent individual/group investment count and money metrics."""
+    ind_counts: list[float] = []
+    ind_money: list[float] = []
+    grp_counts: list[float] = []
+    grp_money: list[float] = []
+    for aid in agent_ids:
+        d = per_agent.get(aid, {})
+        ind_counts.append(float(d.get("avg_individual_investment_count", 0.0)))
+        ind_money.append(float(d.get("avg_individual_investment_money", 0.0)))
+        grp_counts.append(float(d.get("avg_group_investment_count", 0.0)))
+        grp_money.append(float(d.get("avg_group_investment_money", 0.0)))
+    return {
+        "avg_individual_investment_count_per_agent": _mean(ind_counts) or 0.0,
+        "avg_individual_investment_money_per_agent": _mean(ind_money) or 0.0,
+        "avg_group_investment_count_per_agent": _mean(grp_counts) or 0.0,
+        "avg_group_investment_money_per_agent": _mean(grp_money) or 0.0,
+    }
+
+
 # ------------------------------------------------------------------ #
 # ShapeFactory
 # ------------------------------------------------------------------ #
@@ -206,10 +228,12 @@ def _daytrader_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[s
     Key metrics:
       per-agent : final_balance, net_return, total_individual_invested,
                   total_group_invested, group_investment_rate,
-                  individual_investment_count, group_investment_count
+                  individual_investment_count, group_investment_count,
+                  avg_individual_investment_count, avg_individual_investment_money,
+                  avg_group_investment_count, avg_group_investment_money
       per-run   : rounds_completed, cooperation_rate (fraction of investment
                   actions that were group), avg_group_pool_per_round,
-                  avg_net_return
+                  avg_net_return, plus per-agent averages of the avg_* investment metrics
     """
     per_agent: dict[str, dict[str, Any]] = defaultdict(lambda: {
         "final_balance": 0.0,
@@ -266,24 +290,6 @@ def _daytrader_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[s
         if per_agent[aid]["final_balance"] == 0.0:
             per_agent[aid]["final_balance"] = starting_money
 
-    # Net return and group investment rate per agent
-    total_actions = 0
-    total_group_actions = 0
-    net_returns: list[float] = []
-    for aid in trace.agent_ids:
-        d = per_agent[aid]
-        d["net_return"] = d["final_balance"] - starting_money
-        net_returns.append(d["net_return"])
-        ind_c = d["individual_investment_count"]
-        grp_c = d["group_investment_count"]
-        total_inv = ind_c + grp_c
-        d["group_investment_rate"] = grp_c / total_inv if total_inv > 0 else 0.0
-        total_actions += total_inv
-        total_group_actions += grp_c
-        # cast counts to float for CSV
-        d["individual_investment_count"] = float(d["individual_investment_count"])
-        d["group_investment_count"] = float(d["group_investment_count"])
-
     # Task state for rounds_completed
     task_state = {}
     for e in reversed(trace.events):
@@ -294,12 +300,39 @@ def _daytrader_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[s
             task_state = ts
             break
 
-    per_run["rounds_completed"] = float(task_state.get("rounds_completed", 0))
+    rounds_completed = float(task_state.get("rounds_completed", 0))
+    rounds_divisor = rounds_completed if rounds_completed > 0 else 1.0
+
+    # Net return, investment rates, and per-agent avg investment count/money
+    total_actions = 0
+    total_group_actions = 0
+    net_returns: list[float] = []
+    for aid in trace.agent_ids:
+        d = per_agent[aid]
+        d["net_return"] = d["final_balance"] - starting_money
+        net_returns.append(d["net_return"])
+        ind_c = int(d["individual_investment_count"])
+        grp_c = int(d["group_investment_count"])
+        total_ind = float(d["total_individual_invested"])
+        total_grp = float(d["total_group_invested"])
+        total_inv = ind_c + grp_c
+        d["group_investment_rate"] = grp_c / total_inv if total_inv > 0 else 0.0
+        total_actions += total_inv
+        total_group_actions += grp_c
+        d["individual_investment_count"] = float(ind_c)
+        d["group_investment_count"] = float(grp_c)
+        d["avg_individual_investment_count"] = float(ind_c) / rounds_divisor
+        d["avg_group_investment_count"] = float(grp_c) / rounds_divisor
+        d["avg_individual_investment_money"] = total_ind / float(ind_c) if ind_c > 0 else 0.0
+        d["avg_group_investment_money"] = total_grp / float(grp_c) if grp_c > 0 else 0.0
+
+    per_run["rounds_completed"] = rounds_completed
     per_run["cooperation_rate"] = total_group_actions / total_actions if total_actions > 0 else 0.0
     per_run["avg_group_pool_per_round"] = _mean(pool_totals) or 0.0
     per_run["avg_net_return"] = _mean(net_returns) or 0.0
     per_run["messages_sent_total"] = _message_stats(trace.events)["messages_sent"]
     per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
+    per_run.update(_daytrader_run_investment_aggregates(dict(per_agent), trace.agent_ids))
 
     # Winner: agent with highest final balance
     if trace.agent_ids:
@@ -415,52 +448,92 @@ def _hidden_profile_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, d
 # MapTask
 # ------------------------------------------------------------------ #
 
-def _maptask_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+def _maptask_drawing_accuracy_steps(trace: Trace) -> list[dict[str, Any]]:
+    """Collect score_board snapshots after each map_progress_updated event."""
+
+    steps: list[dict[str, Any]] = []
+    for idx, event in enumerate(trace.events):
+        if event.get("event_type") != "map_progress_updated":
+            continue
+        payload = event.get("payload") or {}
+        snap = payload.get("drawing_accuracy")
+        if not isinstance(snap, dict):
+            continue
+        step_entry: dict[str, Any] = {
+            "step_index": len(steps),
+            "sim_step": event.get("step"),
+            "timestamp": event.get("timestamp"),
+            "actor_id": event.get("actor_id"),
+            **snap,
+        }
+        steps.append(step_entry)
+    return steps
+
+
+def _apply_maptask_route_scalars(per_run: dict[str, Any], route_score: float, route_score_max: float,
+                                 route_similarity: float | None) -> None:
+    per_run["route_score"] = route_score
+    per_run["route_score_max"] = route_score_max
+    if route_score_max > 0:
+        per_run["route_completion_rate"] = route_score / route_score_max
+        per_run["follower_accuracy"] = route_score / route_score_max
+    if route_similarity is not None:
+        per_run["route_similarity"] = route_similarity
+
+
+def _maptask_metrics(trace: Trace) -> tuple[dict[str, Any], dict[str, dict[str, float]]]:
     """
-    Key metrics:
-      per-agent : messages_sent, avg_message_length_words, map_progress_updates
-      per-run   : route_score, route_score_max, route_similarity,
-                  route_completion_rate, map_progress_updates_total,
-                  messages_sent_total, communication_efficiency
-                  (route_score / messages_sent_total)
+    Key metrics (score_board.txt-based):
+      per-agent : messages_sent, avg_message_length_tokens, map_progress_updates
+      per-run   : route_score, route_score_max, route_similarity, drawing_score_steps,
+                  drawing_score_final, map_progress_updates_total, communication_efficiency
     """
     per_agent: dict[str, dict[str, float]] = {}
-    per_run: dict[str, float] = {}
+    per_run: dict[str, Any] = {}
 
-    # Route scoring from final task_state
-    task_state: dict[str, Any] = {}
-    for e in reversed(trace.events):
-        p = e.get("payload") or {}
-        obs = p.get("observation") or {}
-        ts = (obs.get("state") or {}). get("task_state") or {}
-        if ts.get("task_type") == "maptask":
-            task_state = ts
-            break
+    task_summary = trace.summary.get("task_summary") or {}
+    route_score = task_summary.get("route_score")
+    route_score_max = task_summary.get("route_score_max")
+    route_similarity = task_summary.get("route_similarity")
 
-    route_score = task_state.get("maptask_route_score")
-    route_score_max = task_state.get("maptask_route_score_max")
-    route_similarity = task_state.get("maptask_route_similarity")
+    # Fallback: final drawing_accuracy from last map_progress_updated
+    steps = _maptask_drawing_accuracy_steps(trace)
+    if steps:
+        per_run["drawing_score_steps"] = steps
+        per_run["drawing_score_final"] = dict(steps[-1])
+        per_run["drawing_score_step_count"] = float(len(steps))
+        last_ratio = steps[-1].get("ratio_vs_ground_truth_route")
+        if isinstance(last_ratio, (int, float)):
+            per_run["drawing_score_final_ratio"] = float(last_ratio)
+        ratios = [
+            float(s["ratio_vs_ground_truth_route"])
+            for s in steps
+            if isinstance(s.get("ratio_vs_ground_truth_route"), (int, float))
+        ]
+        if ratios:
+            per_run["drawing_score_peak_ratio"] = max(ratios)
 
-    if isinstance(route_score, (int, float)):
-        per_run["route_score"] = float(route_score)
-    if isinstance(route_score_max, (int, float)):
-        per_run["route_score_max"] = float(route_score_max)
-        if isinstance(route_score, (int, float)) and route_score_max > 0:
-            per_run["route_completion_rate"] = float(route_score) / float(route_score_max)
-            per_run["follower_accuracy"] = float(route_score) / float(route_score_max)
-    if isinstance(route_similarity, (int, float)):
-        per_run["route_similarity"] = float(route_similarity)
+    if not isinstance(route_score, (int, float)) and steps:
+        route_score = steps[-1].get("score_board_sum_drawn_cells")
+    if not isinstance(route_score_max, (int, float)) and steps:
+        route_score_max = steps[-1].get("max_route_score_board_sum")
+    if not isinstance(route_similarity, (int, float)) and steps:
+        route_similarity = steps[-1].get("ratio_vs_ground_truth_route")
 
-    # Map progress updates
+    if isinstance(route_score, (int, float)) and isinstance(route_score_max, (int, float)):
+        rs = float(route_score)
+        rsm = float(route_score_max)
+        sim = float(route_similarity) if isinstance(route_similarity, (int, float)) else None
+        _apply_maptask_route_scalars(per_run, rs, rsm, sim)
+
     updates_total = len(trace.events_of_type("map_progress_updated"))
     per_run["map_progress_updates_total"] = float(updates_total)
 
-    # Message stats
     msg_stats = _message_stats(trace.events)
     per_run["messages_sent_total"] = msg_stats["messages_sent"]
     total_msgs = msg_stats["messages_sent"]
-    if isinstance(route_score, (int, float)) and total_msgs > 0:
-        per_run["communication_efficiency"] = float(route_score) / total_msgs
+    if isinstance(per_run.get("route_score"), (int, float)) and total_msgs > 0:
+        per_run["communication_efficiency"] = float(per_run["route_score"]) / total_msgs
     per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
 
     for aid in trace.agent_ids:
@@ -490,11 +563,21 @@ _DISPATCH = {
 }
 
 
+def _resolve_task_type(trace: Trace) -> str | None:
+    task_type = trace.task_type
+    if task_type:
+        return task_type
+    summary_type = trace.summary.get("task_type")
+    if isinstance(summary_type, str) and summary_type:
+        return summary_type
+    return None
+
+
 def compute_task_metrics(
     trace: Trace,
-) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+) -> tuple[dict[str, Any], dict[str, dict[str, float]]]:
     """Dispatch to the correct task metrics function and return (per_run, per_agent)."""
-    task_type = trace.task_type
+    task_type = _resolve_task_type(trace)
     fn = _DISPATCH.get(task_type or "")
     if fn is None:
         return {}, {}

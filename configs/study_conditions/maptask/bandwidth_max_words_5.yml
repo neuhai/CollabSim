@@ -28,7 +28,7 @@ controls:
   communication:
     mode: "direct"
     max_messages_per_turn: 999
-    max_message_words: 5
+    max_message_words: 6
 
 task:
   type: "maptask"

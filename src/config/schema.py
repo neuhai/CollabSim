@@ -425,6 +425,13 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
                 raise ConfigSchemaError(
                     "task.phase_rules.group_chat_max_turns must be a positive integer when provided."
                 )
+            discussion_every = phase_rules.get("discussion_every_n_rounds")
+            if discussion_every is not None and (
+                not isinstance(discussion_every, int) or discussion_every <= 0
+            ):
+                raise ConfigSchemaError(
+                    "task.phase_rules.discussion_every_n_rounds must be a positive integer when provided."
+                )
         _require_positive_number_if_present(task_cfg, "starting_money", allow_zero=True)
         _require_positive_number_if_present(task_cfg, "min_trade_price")
         _require_positive_number_if_present(task_cfg, "max_trade_price")

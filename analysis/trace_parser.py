@@ -36,7 +36,13 @@ class Trace:
     def task_type(self) -> str | None:
         config = self.manifest.get("config") or {}
         task = config.get("task") or {}
-        return task.get("type")
+        t = task.get("type")
+        if isinstance(t, str) and t:
+            return t
+        summary_type = self.summary.get("task_type")
+        if isinstance(summary_type, str) and summary_type:
+            return summary_type
+        return None
 
     @property
     def agent_ids(self) -> list[str]:

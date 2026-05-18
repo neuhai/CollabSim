@@ -32,7 +32,10 @@ from src.probe.probe import ProbeResponse
 from src.probe.registry import ProbeRegistry, ProbeValidationError
 from src.tasks import NOOP_TASK
 from src.tasks.daytrader import daytrader_settle_group_pool, daytrader_award_round_bonus, daytrader_snapshot_round_start_money
-from src.tasks.maptask_drawing_accuracy import compute_drawing_accuracy_snapshot
+from src.tasks.maptask_drawing_accuracy import (
+    compute_drawing_accuracy_snapshot,
+    compute_maptask_route_outcome,
+)
 from src.tasks.registry import TaskRegistry
 from src.utils.env import load_text_file
 
@@ -1217,8 +1220,13 @@ class ExperimentController:
                 if not isinstance(processed, dict):
                     continue
                 processed_any = True
+                actor_id = processed.get("actor_id")
+                if isinstance(actor_id, str) and actor_id:
+                    self._advance_daytrader_phase_from_action(actor_id, processed)
+                    self._advance_hidden_profile_phase_from_action(actor_id, processed)
                 if processed.get("type") != "do_nothing":
                     had_non_noop = True
+            self._sync_daytrader_round_phase()
             return processed_any, had_non_noop
 
         validated_actions: list[tuple[str, dict[str, Any]]] = []
@@ -3555,11 +3563,7 @@ class ExperimentController:
             pending_count = len(pending) if isinstance(pending, list) else len(participant_ids)
             if pending_count > 0:
                 return
-            task_state["phase"] = "group_chat"
-            task_state["phase_step_in_round"] = 2
-            task_state["group_chat_turns"] = 0
-            task_state["group_chat_silent_agents"] = []
-            self._pending_realtime_message_queue = []
+            self._daytrader_finish_decision_phase(task_state, participant_ids)
         if task_state.get("phase") != "group_chat":
             return
         turns = task_state.get("group_chat_turns", 0)
@@ -3583,19 +3587,80 @@ class ExperimentController:
             return sorted(agent_id for agent_id in self.state.agents.keys() if isinstance(agent_id, str) and agent_id)
         return []
 
-    def _daytrader_group_chat_max_turns(self) -> int:
+    def _daytrader_phase_rules(self) -> dict[str, Any]:
+        if isinstance(self.state.task_state, dict):
+            rules = self.state.task_state.get("phase_rules")
+            if isinstance(rules, dict):
+                return rules
         if not isinstance(self.config, dict):
-            return 6
+            return {}
         task_cfg = self.config.get("task", {})
         if not isinstance(task_cfg, dict):
-            return 6
+            return {}
         phase_rules = task_cfg.get("phase_rules", {})
-        if not isinstance(phase_rules, dict):
-            return 6
-        value = phase_rules.get("group_chat_max_turns")
+        return phase_rules if isinstance(phase_rules, dict) else {}
+
+    def _daytrader_group_chat_max_turns(self) -> int:
+        value = self._daytrader_phase_rules().get("group_chat_max_turns")
         if isinstance(value, int) and value > 0:
             return value
         return 6
+
+    def _daytrader_discussion_every_n_rounds(self) -> int:
+        value = self._daytrader_phase_rules().get("discussion_every_n_rounds")
+        if isinstance(value, int) and value > 0:
+            return value
+        return 5
+
+    def _daytrader_discussion_after_round(self, round_index: int) -> bool:
+        interval = self._daytrader_discussion_every_n_rounds()
+        return isinstance(round_index, int) and round_index > 0 and round_index % interval == 0
+
+    def _daytrader_begin_group_chat(self, task_state: dict[str, Any], agent_ids: list[str]) -> None:
+        task_state["phase"] = "group_chat"
+        task_state["phase_step_in_round"] = 2
+        task_state["group_chat_turns"] = 0
+        task_state["group_chat_silent_agents"] = []
+        self._pending_realtime_message_queue = []
+        bootstrap_targets = self._daytrader_group_chat_bootstrap_targets(agent_ids)
+        self._pending_realtime_message_queue.extend(
+            {"agent_id": target, "daytrader_phase_lock": "group_chat"} for target in bootstrap_targets
+        )
+
+    def _daytrader_advance_to_next_round(self, task_state: dict[str, Any], agent_ids: list[str]) -> None:
+        round_index = task_state.get("round_index", 1)
+        if not isinstance(round_index, int) or round_index <= 0:
+            round_index = 1
+        round_index += 1
+        rounds_completed = round_index - 1
+        task_state["round_index"] = round_index
+        task_state["rounds_completed"] = rounds_completed
+        task_state["steps_taken"] = rounds_completed
+        target_rounds = task_state.get("target_rounds", 0)
+        if isinstance(target_rounds, int) and rounds_completed >= target_rounds:
+            task_state["complete"] = True
+        task_state["phase"] = "decision"
+        task_state["phase_step_in_round"] = 1
+        task_state["decision_pending_agents"] = list(agent_ids)
+        task_state["group_chat_turns"] = 0
+        task_state["group_chat_silent_agents"] = []
+        self._pending_realtime_message_queue = [
+            entry
+            for entry in self._pending_realtime_message_queue
+            if isinstance(entry, dict) and entry.get("daytrader_phase_lock") != "group_chat"
+        ]
+
+    def _daytrader_finish_decision_phase(self, task_state: dict[str, Any], agent_ids: list[str]) -> None:
+        daytrader_settle_group_pool(self.state, self._emit_event)
+        daytrader_award_round_bonus(self.state, self._emit_event)
+        daytrader_snapshot_round_start_money(self.state)
+        round_index = task_state.get("round_index", 1)
+        if not isinstance(round_index, int) or round_index <= 0:
+            round_index = 1
+        if self._daytrader_discussion_after_round(round_index):
+            self._daytrader_begin_group_chat(task_state, agent_ids)
+        else:
+            self._daytrader_advance_to_next_round(task_state, agent_ids)
 
     def _advance_daytrader_phase_from_action(self, actor_id: str, action: dict[str, Any]) -> None:
         if self._task_type() != "daytrader":
@@ -3617,18 +3682,7 @@ class ExperimentController:
             task_state["decision_pending_agents"] = sorted(pending)
             if pending:
                 return
-            daytrader_settle_group_pool(self.state, self._emit_event)
-            daytrader_award_round_bonus(self.state, self._emit_event)
-            daytrader_snapshot_round_start_money(self.state)
-            task_state["phase"] = "group_chat"
-            task_state["phase_step_in_round"] = 2
-            task_state["group_chat_turns"] = 0
-            task_state["group_chat_silent_agents"] = []
-            self._pending_realtime_message_queue = []
-            bootstrap_targets = self._daytrader_group_chat_bootstrap_targets(agent_ids)
-            self._pending_realtime_message_queue.extend(
-                {"agent_id": target, "daytrader_phase_lock": "group_chat"} for target in bootstrap_targets
-            )
+            self._daytrader_finish_decision_phase(task_state, agent_ids)
             return
 
         turns = task_state.get("group_chat_turns", 0)
@@ -3642,27 +3696,7 @@ class ExperimentController:
         )
         if group_chat_pending and turns < self._daytrader_group_chat_max_turns():
             return
-        round_index = task_state.get("round_index", 1)
-        if not isinstance(round_index, int) or round_index <= 0:
-            round_index = 1
-        round_index += 1
-        rounds_completed = round_index - 1
-        task_state["round_index"] = round_index
-        task_state["rounds_completed"] = rounds_completed
-        task_state["steps_taken"] = rounds_completed * 2
-        target_rounds = task_state.get("target_rounds", 0)
-        if isinstance(target_rounds, int) and rounds_completed >= target_rounds:
-            task_state["complete"] = True
-        task_state["phase"] = "decision"
-        task_state["phase_step_in_round"] = 1
-        task_state["decision_pending_agents"] = list(agent_ids)
-        task_state["group_chat_turns"] = 0
-        task_state["group_chat_silent_agents"] = []
-        self._pending_realtime_message_queue = [
-            entry
-            for entry in self._pending_realtime_message_queue
-            if isinstance(entry, dict) and entry.get("daytrader_phase_lock") != "group_chat"
-        ]
+        self._daytrader_advance_to_next_round(task_state, agent_ids)
 
     def _daytrader_runtime_fields(self) -> dict[str, Any]:
         if self._task_type() != "daytrader":
@@ -4283,7 +4317,7 @@ class ExperimentController:
                     if isinstance(progress, dict):
                         updates += len(progress)
                 outcome["map_progress_updates"] = updates
-                route_score = self._maptask_route_similarity(participants)
+                route_score = compute_maptask_route_outcome(self.state.task_state)
                 if route_score is not None:
                     outcome.update(route_score)
         return outcome
@@ -4426,6 +4460,9 @@ class ExperimentController:
             task_summary["route_score"] = outcome.get("maptask_route_score")
             task_summary["route_score_max"] = outcome.get("maptask_route_score_max")
             task_summary["route_similarity"] = outcome.get("maptask_route_similarity")
+            drawing_acc = outcome.get("drawing_accuracy")
+            if isinstance(drawing_acc, dict):
+                task_summary["drawing_accuracy_final"] = drawing_acc
 
         return {
             "run_id": run_id,
@@ -4435,152 +4472,3 @@ class ExperimentController:
             "task_summary": task_summary,
         }
 
-    def _maptask_route_similarity(self, participants: dict[str, Any]) -> dict[str, Any] | None:
-        guider_map_text: str | None = None
-        follower_map_text: str | None = None
-        follower_points: set[tuple[int, int]] = set()
-        anchor_points: set[tuple[int, int]] = set()
-
-        for participant in participants.values():
-            if not isinstance(participant, dict):
-                continue
-            role = participant.get("role")
-            map_info = participant.get("map")
-            if isinstance(map_info, dict):
-                special_points = map_info.get("special_points")
-                if isinstance(special_points, dict):
-                    for key in ("start", "finish"):
-                        entry = special_points.get(key)
-                        if not isinstance(entry, dict):
-                            continue
-                        point = self._coerce_cell_point(entry.get("cell"))
-                        if point is not None:
-                            anchor_points.add(point)
-                if role == "guider":
-                    text = map_info.get("map_text")
-                    if isinstance(text, str) and text:
-                        guider_map_text = text
-            if role == "follower":
-                working_text = participant.get("map_working_text")
-                if isinstance(working_text, str) and working_text:
-                    follower_map_text = working_text
-                raw_points = participant.get("drawn_route_points")
-                if isinstance(raw_points, list):
-                    for item in raw_points:
-                        point = self._coerce_cell_point(item)
-                        if point is not None:
-                            follower_points.add(point)
-
-        ts = self.state.task_state if isinstance(self.state.task_state, dict) else {}
-        ref_cells = ts.get("reference_route_cells")
-        if isinstance(ref_cells, list) and ref_cells:
-            gt_points: set[tuple[int, int]] = set()
-            for item in ref_cells:
-                pt = self._coerce_cell_point(item)
-                if pt is not None:
-                    gt_points.add(pt)
-            gt_points = gt_points.union(anchor_points)
-        elif guider_map_text is not None:
-            gt_points = self._extract_route_points_from_text(guider_map_text).union(anchor_points)
-        else:
-            return None
-
-        if guider_map_text is None:
-            return None
-        if not gt_points:
-            return None
-
-        score_map = self._build_maptask_score_map(guider_map_text, gt_points)
-        total_score = 0
-        for point in follower_points:
-            total_score += score_map.get(point, 0)
-        max_score = len(gt_points) * 3
-        similarity = float(total_score) / float(max_score) if max_score > 0 else 0.0
-        if similarity > 1.0:
-            similarity = 1.0
-        return {
-            "maptask_route_score": float(total_score),
-            "maptask_route_score_max": float(max_score),
-            "maptask_route_similarity": similarity,
-            "maptask_gt_points": float(len(gt_points)),
-            "maptask_follower_points": float(len(follower_points)),
-            "maptask_score_map_text": self._render_maptask_score_map(guider_map_text, score_map),
-            "maptask_follower_map_text": follower_map_text,
-        }
-
-    def _extract_route_points_from_text(self, map_text: str) -> set[tuple[int, int]]:
-        points: set[tuple[int, int]] = set()
-        for row_idx, line in enumerate(map_text.splitlines()):
-            for col_idx, cell in enumerate(line):
-                if cell in {".", "*"}:
-                    points.add((row_idx, col_idx))
-        return points
-
-    def _coerce_cell_point(self, value: Any) -> tuple[int, int] | None:
-        if not isinstance(value, (list, tuple)) or len(value) != 2:
-            return None
-        row, col = value
-        if not isinstance(row, int) or not isinstance(col, int):
-            return None
-        return (row, col)
-
-    def _build_maptask_score_map(
-        self,
-        map_text: str,
-        gt_points: set[tuple[int, int]],
-    ) -> dict[tuple[int, int], int]:
-        lines = map_text.splitlines()
-        rows = len(lines)
-        cols = max((len(line) for line in lines), default=0)
-        score_map: dict[tuple[int, int], int] = {}
-        for row in range(rows):
-            for col in range(cols):
-                point = (row, col)
-                if point in gt_points:
-                    score_map[point] = 3
-                    continue
-                best_distance = self._nearest_chebyshev_distance(point, gt_points)
-                if best_distance is None:
-                    continue
-                if best_distance == 1:
-                    score_map[point] = 2
-                elif best_distance == 2:
-                    score_map[point] = 1
-        return score_map
-
-    def _nearest_chebyshev_distance(
-        self,
-        point: tuple[int, int],
-        gt_points: set[tuple[int, int]],
-    ) -> int | None:
-        if not gt_points:
-            return None
-        row, col = point
-        best: int | None = None
-        for gt_row, gt_col in gt_points:
-            distance = max(abs(row - gt_row), abs(col - gt_col))
-            if best is None or distance < best:
-                best = distance
-                if best == 0:
-                    return 0
-        return best
-
-    def _render_maptask_score_map(
-        self,
-        map_text: str,
-        score_map: dict[tuple[int, int], int],
-    ) -> str:
-        lines = map_text.splitlines()
-        rows = len(lines)
-        cols = max((len(line) for line in lines), default=0)
-        rendered: list[str] = []
-        for row in range(rows):
-            chars: list[str] = []
-            for col in range(cols):
-                score = score_map.get((row, col), 0)
-                if score <= 0:
-                    chars.append(" ")
-                else:
-                    chars.append(str(score))
-            rendered.append("".join(chars))
-        return "\n".join(rendered)

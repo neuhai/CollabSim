@@ -316,8 +316,8 @@ def compute_metrics(
         route_score = task_outcome.get("maptask_route_score")
         route_score_max = task_outcome.get("maptask_route_score_max")
         route_similarity = task_outcome.get("maptask_route_similarity")
-        gt_points = task_outcome.get("maptask_gt_points")
-        follower_points = task_outcome.get("maptask_follower_points")
+        drawn_cells = task_outcome.get("maptask_drawn_cell_count")
+        route_hits = task_outcome.get("maptask_route_cells_hit_count")
         complete = task_outcome.get("complete")
         if isinstance(steps_taken, int):
             per_run["steps_taken"] = float(steps_taken)
@@ -333,10 +333,10 @@ def compute_metrics(
             per_run["task_maptask_route_score_max"] = float(route_score_max)
         if isinstance(route_similarity, (int, float)):
             per_run["task_maptask_route_similarity"] = float(route_similarity)
-        if isinstance(gt_points, (int, float)):
-            per_run["task_maptask_gt_points"] = float(gt_points)
-        if isinstance(follower_points, (int, float)):
-            per_run["task_maptask_follower_points"] = float(follower_points)
+        if isinstance(drawn_cells, (int, float)):
+            per_run["task_maptask_drawn_cell_count"] = float(drawn_cells)
+        if isinstance(route_hits, (int, float)):
+            per_run["task_maptask_route_cells_hit_count"] = float(route_hits)
         if isinstance(complete, bool):
             per_run["completed"] = 1.0 if complete else 0.0
     event_per_run, event_per_agent = _compute_event_metrics(event_log)

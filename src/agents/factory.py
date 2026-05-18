@@ -42,6 +42,16 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
     action_path = prompt_cfg.get("action", "prompts/action_prompt.md")
     probe_path = prompt_cfg.get("probe", "prompts/probe_prompt.md")
     system_prompt = load_text_file(system_path) or "You are a collaborative agent in a research simulation."
+    collaboration_enabled = (
+        isinstance(experiment_cfg, dict) and experiment_cfg.get("collaboration") is True
+    )
+    if collaboration_enabled:
+        collaboration_path = prompt_cfg.get("collaboration", "prompts/collaboration_module.md")
+        collaboration_text = load_text_file(
+            collaboration_path if isinstance(collaboration_path, str) else "prompts/collaboration_module.md"
+        )
+        if isinstance(collaboration_text, str) and collaboration_text.strip():
+            system_prompt = f"{system_prompt.rstrip()}\n\n{collaboration_text.strip()}"
     persona_prompt = load_text_file(persona_path) or "Persona profile:\n{persona_profile}"
     protocol_prompt = load_text_file(protocol_path) or "{protocol_json}{communication_limits}"
     action_space_prompt = load_text_file(action_space_path) or "Allowed actions: {allowed_actions}"

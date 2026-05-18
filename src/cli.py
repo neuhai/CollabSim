@@ -88,6 +88,14 @@ def main(argv: list[str] | None = None) -> int:
         metavar="NAME",
         help="WandB run name (defaults to run_id).",
     )
+    parser.add_argument(
+        "--collaboration",
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="BOOL",
+        help="Append prompts/collaboration_module.md to each agent's initial prompt (default path; override via prompts.collaboration in YAML).",
+    )
     args = parser.parse_args(argv)
 
     load_env_file()
@@ -124,6 +132,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.manifest_path and args.dry_run:
         print("manifest_path cannot be used with --dry-run.", file=sys.stderr)
         return 1
+
+    if _coerce_bool(args.collaboration):
+        experiment = config.setdefault("experiment", {})
+        if isinstance(experiment, dict):
+            experiment["collaboration"] = True
 
     if args.validate_only:
         print("Config validation passed.")
@@ -327,6 +340,16 @@ def _is_time_mode(config: dict[str, object]) -> bool:
     if not isinstance(protocol, dict):
         return False
     return protocol.get("step_mode") == "time"
+
+
+def _coerce_bool(value: object) -> bool:
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
 
 
 def _nonempty_str(value: object) -> str | None:

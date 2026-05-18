@@ -51,13 +51,13 @@ task:
   incentive_money: 60
   max_production_num: 3
   shapes_order: 4
-  shapes_types: 3
-  shape_options: ["circle", "square", "triangle"]
+  shapes_types: 4
+  shape_options: ["circle", "square", "triangle", "rectangle"]
   specialties:
     A: "circle"
     B: "square"
     C: "triangle"
-    D: "circle"
+    D: "rectangle"
 
 protocol:
   turn_taking: "simultaneous"

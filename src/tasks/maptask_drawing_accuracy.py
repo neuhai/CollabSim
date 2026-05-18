@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+DEFAULT_SCORE_BOARD_PATH = Path("configs/map_task_material/score_board.txt")
+
 
 def parse_score_board_text(raw: str) -> list[list[int]]:
     """Parse ASCII score board: '.' -> 0, '1'/'2'/'3' -> integers; skip # comment lines."""
@@ -105,4 +107,71 @@ def compute_drawing_accuracy_snapshot(task_state: dict[str, Any]) -> dict[str, A
         "ratio_vs_ground_truth_route": ratio,
         "drawn_cell_count": len(drawn),
         "route_cells_hit_count": route_cells_hit,
+    }
+
+
+def render_score_board_text(board: list[list[int]]) -> str:
+    """Render score board matrix as ASCII (digits for scored cells, space for 0)."""
+
+    lines: list[str] = []
+    for row in board:
+        chars: list[str] = []
+        for val in row:
+            v = int(val)
+            chars.append(str(v) if v > 0 else " ")
+        lines.append("".join(chars))
+    return "\n".join(lines)
+
+
+def snapshot_to_route_metrics(snap: dict[str, Any]) -> dict[str, float]:
+    """Map a drawing_accuracy snapshot to canonical route_score fields."""
+
+    score = float(snap.get("score_board_sum_drawn_cells", 0))
+    score_max = float(snap.get("max_route_score_board_sum", 0))
+    ratio_raw = snap.get("ratio_vs_ground_truth_route")
+    ratio = float(ratio_raw) if isinstance(ratio_raw, (int, float)) else (
+        (score / score_max) if score_max > 0 else 0.0
+    )
+    out: dict[str, float] = {
+        "route_score": score,
+        "route_score_max": score_max,
+        "route_similarity": ratio,
+        "follower_accuracy": ratio,
+        "drawn_cell_count": float(snap.get("drawn_cell_count", 0)),
+        "route_cells_hit_count": float(snap.get("route_cells_hit_count", 0)),
+    }
+    return out
+
+
+def compute_maptask_route_outcome(task_state: dict[str, Any]) -> dict[str, Any] | None:
+    """Score-board-based run outcome from current task_state (same source as step snapshots)."""
+
+    snap = compute_drawing_accuracy_snapshot(task_state)
+    if snap is None:
+        return None
+    metrics = snapshot_to_route_metrics(snap)
+    board = task_state.get("drawing_score_board")
+    score_map_text: str | None = None
+    if isinstance(board, list) and board:
+        score_map_text = render_score_board_text(board)
+
+    follower_map_text: str | None = None
+    participants = task_state.get("participants")
+    if isinstance(participants, dict):
+        for pdata in participants.values():
+            if isinstance(pdata, dict) and pdata.get("role") == "follower":
+                wt = pdata.get("map_working_text")
+                if isinstance(wt, str) and wt:
+                    follower_map_text = wt
+                break
+
+    return {
+        "maptask_route_score": metrics["route_score"],
+        "maptask_route_score_max": metrics["route_score_max"],
+        "maptask_route_similarity": metrics["route_similarity"],
+        "maptask_drawn_cell_count": metrics["drawn_cell_count"],
+        "maptask_route_cells_hit_count": metrics["route_cells_hit_count"],
+        "maptask_score_map_text": score_map_text,
+        "maptask_follower_map_text": follower_map_text,
+        "drawing_accuracy": snap,
     }

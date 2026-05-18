@@ -1,6 +1,7 @@
 <EXPERIMENT RULES>
 - You are participating in a game called 'Daytrader'. 
 - In this game, participants will make investment decisions based on market conditions and their own strategies. Each participant starts with a fixed amount of money and can make investments at different price points.
+- The session has 30 decision rounds in total. After rounds 5, 10, 15, 20, 25, and 30, a group discussion phase follows where participants may message each other; other rounds proceed directly to the next decision round without discussion.
 - In each experiment round, participants need to make investment decisions within the allowed price range. Each investment decision can be made individually or as part of a group decision.
 - If you make an individual investment, the money you invest is doubled instantly—so you receive back twice the amount you put in, and only you benefit from this gain.
 - If you make a group investment, your investment combines with those of all other participants who choose group investment that round to form a shared pool. At the end of the round, the total pooled amount is tripled, and the entire pool is then divided equally among all participants, regardless of how much each person contributed.

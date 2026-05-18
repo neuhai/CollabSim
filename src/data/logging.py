@@ -68,12 +68,23 @@ def append_jsonl(path: Path, records: Iterable[dict[str, Any]], *, indent: int |
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Read JSONL records (compact one-line or pretty-printed multi-line per record)."""
+    """Read JSONL records (compact one-line or pretty-printed multi-line per record).
+
+    Also accepts a single pretty-printed JSON array (as written by write_events_json).
+    """
     if not path.exists():
         return []
     text = path.read_text(encoding="utf-8")
     if not text.strip():
         return []
+    stripped = text.lstrip()
+    if stripped.startswith("["):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
     records: list[dict[str, Any]] = []
     decoder = json.JSONDecoder()
     idx = 0
@@ -89,6 +100,9 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
             break
         if isinstance(obj, dict):
             records.append(obj)
+        elif isinstance(obj, list):
+            records.extend(item for item in obj if isinstance(item, dict))
+            break
         idx = end
     return records
 

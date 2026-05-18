@@ -28,12 +28,13 @@ controls:
 
 task:
   type: "daytrader"
-  target_rounds: 5
+  target_rounds: 30
   starting_money: 200
   min_trade_price: 15
   max_trade_price: 100
   incentive_money: 60
   phase_rules:
+    discussion_every_n_rounds: 5
     group_chat_max_turns: 12
 
 protocol:

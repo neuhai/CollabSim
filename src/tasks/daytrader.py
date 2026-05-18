@@ -46,10 +46,23 @@ def daytrader_init_state(config: dict[str, Any]) -> dict[str, Any]:
             continue
         participants[agent_id] = {}
     participant_ids = sorted(participants.keys())
+    phase_rules_cfg = task_cfg.get("phase_rules", {})
+    if not isinstance(phase_rules_cfg, dict):
+        phase_rules_cfg = {}
+    discussion_every = phase_rules_cfg.get("discussion_every_n_rounds", 5)
+    if not isinstance(discussion_every, int) or discussion_every <= 0:
+        discussion_every = 5
+    group_chat_max_turns = phase_rules_cfg.get("group_chat_max_turns", 12)
+    if not isinstance(group_chat_max_turns, int) or group_chat_max_turns <= 0:
+        group_chat_max_turns = 12
     return {
         "task_type": "daytrader",
         "target_rounds": target_rounds,
         "target_steps": target_rounds * 2,
+        "phase_rules": {
+            "discussion_every_n_rounds": discussion_every,
+            "group_chat_max_turns": group_chat_max_turns,
+        },
         "starting_money": float(starting_money),
         "steps_taken": 0,
         "rounds_completed": 0,
