@@ -242,6 +242,22 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
         invalid = [item for item in enabled_actions if item not in ACTION_TYPES]
         if invalid:
             raise ConfigSchemaError(f"action_space.enabled contains unsupported actions: {', '.join(invalid)}")
+    enabled_by_role = action_space.get("enabled_by_role")
+    if enabled_by_role is not None:
+        if not isinstance(enabled_by_role, Mapping):
+            raise ConfigSchemaError("action_space.enabled_by_role must be an object when provided.")
+        for role_key, actions in enabled_by_role.items():
+            if not isinstance(role_key, str) or not role_key.strip():
+                raise ConfigSchemaError("action_space.enabled_by_role keys must be non-empty strings.")
+            if not isinstance(actions, list) or not actions:
+                raise ConfigSchemaError(
+                    f"action_space.enabled_by_role['{role_key}'] must be a non-empty list when provided."
+                )
+            invalid_role = [item for item in actions if item not in ACTION_TYPES]
+            if invalid_role:
+                raise ConfigSchemaError(
+                    f"action_space.enabled_by_role['{role_key}'] unsupported actions: {', '.join(invalid_role)}"
+                )
     decide_cfg = action_space.get("decide")
     if decide_cfg is not None:
         if not isinstance(decide_cfg, Mapping):
@@ -397,6 +413,10 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
                 raise ConfigSchemaError("task.shape_options must be a non-empty list when provided.")
             if not all(isinstance(item, str) and item for item in shape_options):
                 raise ConfigSchemaError("task.shape_options must contain non-empty strings.")
+        if "peer_economic_dashboard" in task_cfg:
+            peer_dash = task_cfg.get("peer_economic_dashboard")
+            if not isinstance(peer_dash, bool):
+                raise ConfigSchemaError("task.peer_economic_dashboard must be a boolean when provided.")
     if task_type == "daytrader":
         if "target_steps" in task_cfg:
             raise ConfigSchemaError("daytrader uses task.target_rounds; remove task.target_steps.")
@@ -456,6 +476,19 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
             canvas_visibility = task_cfg.get("canvas_visibility")
             if not isinstance(canvas_visibility, bool):
                 raise ConfigSchemaError("task.canvas_visibility must be a boolean when provided for maptask.")
+        map_material = task_cfg.get("map_material")
+        if map_material is not None:
+            if not isinstance(map_material, Mapping):
+                raise ConfigSchemaError("task.map_material must be an object when provided.")
+            for key in ("map_json", "map_route_json", "map_route_txt"):
+                path_val = map_material.get(key)
+                if path_val is None or not isinstance(path_val, str) or not path_val.strip():
+                    raise ConfigSchemaError(
+                        f"task.map_material.{key} must be a non-empty string when map_material is provided."
+                    )
+            sb_opt = map_material.get("score_board_txt")
+            if sb_opt is not None and (not isinstance(sb_opt, str) or not sb_opt.strip()):
+                raise ConfigSchemaError("task.map_material.score_board_txt must be a non-empty string when provided.")
     controls = config.get("controls", {})
     if isinstance(controls, Mapping):
         communication = controls.get("communication")
@@ -471,6 +504,21 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
             limit = communication.get("max_messages_per_turn")
             if limit is not None and (not isinstance(limit, int) or limit <= 0):
                 raise ConfigSchemaError("controls.communication.max_messages_per_turn must be a positive integer.")
+            max_words = communication.get("max_message_words")
+            if max_words is not None and (not isinstance(max_words, int) or max_words <= 0):
+                raise ConfigSchemaError("controls.communication.max_message_words must be a positive integer when provided.")
+            min_interval = communication.get("min_sim_interval_between_communicate_sec")
+            if min_interval is not None and (
+                not isinstance(min_interval, (int, float)) or float(min_interval) <= 0
+            ):
+                raise ConfigSchemaError(
+                    "controls.communication.min_sim_interval_between_communicate_sec must be positive when provided."
+                )
+            min_between = communication.get("min_agent_actions_between_communicate")
+            if min_between is not None and (not isinstance(min_between, int) or min_between <= 0):
+                raise ConfigSchemaError(
+                    "controls.communication.min_agent_actions_between_communicate must be a positive integer when provided."
+                )
         information_distribution = controls.get("information_distribution")
         if information_distribution is not None:
             if not isinstance(information_distribution, Mapping):

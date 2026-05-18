@@ -60,6 +60,16 @@ def shapefactory_init_state(config: dict[str, Any]) -> dict[str, Any]:
             "in_production": [],
         }
 
+    protocol_cfg = config.get("protocol", {})
+    if not isinstance(protocol_cfg, dict):
+        protocol_cfg = {}
+    prod_time = task_cfg.get("production_time")
+    if prod_time is None:
+        delay = protocol_cfg.get("produce_shape_delay_sec")
+        prod_time = float(delay) if isinstance(delay, (int, float)) else 10.0
+    else:
+        prod_time = float(prod_time)
+
     return {
         "task_type": "shapefactory",
         "target_steps": target_steps,
@@ -78,6 +88,9 @@ def shapefactory_init_state(config: dict[str, Any]) -> dict[str, Any]:
             "max_trade_price": float(max_trade_price),
             "incentive_money": float(incentive_money),
             "max_production_num": int(max_production_num),
+            "starting_money": float(starting_money),
+            "shapes_order": int(max(int(shapes_order), 1)),
+            "production_time": float(prod_time),
         },
     }
 

@@ -7,7 +7,9 @@ experiment:
 prompts:
   system: "prompts/system_instructions.md"
   persona: "prompts/persona_profile.md"
-  task: "prompts/task_maptask_instructions.md"
+  task: "prompts/task_maptask_guide_instructions.md"
+  task_guider: "prompts/task_maptask_guide_instructions.md"
+  task_follower: "prompts/task_maptask_follower_instructions.md"
   protocol: "prompts/protocol.md"
   action_space: "prompts/action_space.md"
   return_format: "prompts/return_format_maptask.md"
@@ -30,7 +32,10 @@ agents:
       temperature: 0.0
 
 action_space:
-  enabled: ["communicate", "update_map_progress", "do_nothing"]
+  enabled: ["message", "draw", "erase", "undo", "reset", "do_nothing"]
+  enabled_by_role:
+    guider: ["message", "do_nothing"]
+    follower: ["message", "draw", "erase", "undo", "reset", "do_nothing"]
 
 controls:
   communication:
@@ -40,9 +45,12 @@ controls:
 task:
   type: "maptask"
   target_steps: 10000
-  # When true, the guider's observation includes follower route cells (map_progress events + task state).
   canvas_visibility: true
-  landmarks_path: "maptask_landmarks_cells.yml"
+  map_material:
+    map_json: "configs/map_task_material/map.json"
+    map_route_json: "configs/map_task_material/map_route.json"
+    map_route_txt: "configs/map_task_material/map_route.txt"
+    score_board_txt: "configs/map_task_material/score_board.txt"
   roles:
     A: "guider"
     B: "follower"

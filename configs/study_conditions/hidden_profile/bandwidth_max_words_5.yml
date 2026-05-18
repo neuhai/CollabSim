@@ -1,0 +1,75 @@
+experiment:
+  id: "study_hp_bandwidth_max5_words"
+  seed: 42
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_hidden_profile_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format_hiddenprofile.md"
+  action: "prompts/action_prompt.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - {id: "A", role: "planner", model: {provider: "azure", name: "gpt-4o", temperature: 0.2}}
+  - {id: "B", role: "analyst", model: {provider: "azure", name: "gpt-4o", temperature: 0.2}}
+  - {id: "C", role: "planner", model: {provider: "azure", name: "gpt-4o", temperature: 0.2}}
+
+action_space:
+  enabled: ["message", "decide", "do_nothing"]
+  decide:
+    reveal: "aggregated"
+
+controls:
+  communication:
+    mode: "broadcast"
+    max_message_words: 5
+  information_distribution:
+    visibility: "asymmetric"
+  visibility_defaults:
+    task_state: ["shared_facts", "target_steps", "steps_taken", "complete", "phase", "phase_rules", "discussion_started_at_sec"]
+    resources: ["*"]
+    turn_state: ["*"]
+    buffers: ["*"]
+
+task:
+  type: "hidden_profile"
+  target_steps: 3
+  phase_rules:
+    initial_vote_decision_id: "initial_vote"
+    final_vote_decision_id: "final_vote"
+    discussion_action_types: ["message"]
+    discussion_duration_sec: 600
+  shared_facts:
+    - "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-off - is regarded as being not open to new ideas - is unfriendly - eats unhealthily"
+    - "Candidate B - keeps calm in a crisis - is known to be 100% reliable - is good at assessing weather conditions - has excellent computer skills - can be grumpy - can be uncooperative - has a relatively weak memory for numbers - makes nasty remarks about colleagues - is regarded as pretentious - sometimes adopts the wrong tone when communicating"
+    - "Candidate C - has difficulty communicating ideas - is regarded as egocentric - is not very willing to further his education"
+    - "Candidate D - responds to unexpected events adequately - can concentrate very well - solves problems extremely well - takes responsibility seriously - is regarded as arrogant - has relatively weak leadership skills - is regarded as a know-it-all - has a hot temper - is considered moody - is regarded as a loner"
+  private_facts:
+    A:
+      - "Candidate C - can make correct decisions quickly - handles stress very well"
+    B:
+      - "Candidate C - creates a positive atmosphere with his crew - is very conscientious"
+    C:
+      - "Candidate C - understands complicated technology - puts concern for others above everything - has excellent attention skills"
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "time"
+  agent_trigger_interval_sec: 20
+  termination:
+    condition: "task_complete"
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_action"
+  templates: ["grounding_v1", "coordination_v1"]
+  questions_path: "prompts/interview_questions_hidden_profile.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/study_conditions/hidden_profile/bandwidth_max_words_5"
+  observation_events: true

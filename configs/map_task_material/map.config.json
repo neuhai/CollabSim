@@ -1,0 +1,17 @@
+{
+  "extraction_mode": "ink_voronoi",
+  "content_bbox_norm": [0.0, 0.0, 1.0, 1.0],
+  "ink_threshold": 200,
+  "use_otsu": false,
+  "min_ink_fraction": 0.02,
+  "start_reference": "",
+  "end_reference": "",
+  "start_anchor": [0.5, 0.85],
+  "end_anchor": [0.5, 0.15],
+  "landmarks": {
+    "spot_a": { "anchor": [0.2, 0.25], "type": "blocked" },
+    "spot_b": { "anchor": [0.8, 0.25], "type": "blocked" },
+    "spot_c": { "anchor": [0.35, 0.55], "type": "blocked" },
+    "spot_d": { "anchor": [0.72, 0.72], "type": "blocked" }
+  }
+}

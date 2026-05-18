@@ -51,7 +51,7 @@
 ### 1.3 action_space：允许动作集合
 
 常见开启：
-- `communicate`
+- `message`
 - `produce_shape`
 - `propose_trade_offer`
 - `trade_response`

@@ -5,7 +5,7 @@ Representative action payloads (envelope + payload):
 ### Communicate
 ```json
 {
-  "type": "communicate",
+  "type": "message",
   "actor_id": "agent_A",
   "timestamp": "2026-03-09T12:00:00Z",
   "payload": {

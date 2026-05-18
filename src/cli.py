@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
+from src.utils.env import load_env_file
 from src.config.loader import ConfigError, load_experiment_config
 from src.config.schema import ConfigSchemaError, validate_config_schema
 from src.controller.controller import ExperimentState
@@ -15,6 +17,7 @@ from src.data.logging import build_run_manifest, write_json
 from src.probe.loader import ProbeTemplateError, load_probe_templates
 from src.agents.factory import build_agents
 from src.tasks.registry import build_default_registry
+from src.config.model_overrides import apply_agent_model_overrides
 
 
 _LAST_SIM_TIME_MS: int | None = None
@@ -49,7 +52,30 @@ def main(argv: list[str] | None = None) -> int:
         default="configs/probe_templates.yml",
         help="Path to probe template YAML for registry initialization",
     )
+    parser.add_argument(
+        "--model-provider",
+        default=None,
+        metavar="NAME",
+        help="Override model.provider for all agents (overrides YAML). Env: COLLABSIM_MODEL_PROVIDER.",
+    )
+    parser.add_argument(
+        "--model-name",
+        default=None,
+        metavar="MODEL",
+        help="Override model.name for all agents. Env: COLLABSIM_MODEL_NAME.",
+    )
+    parser.add_argument(
+        "--model-temperature",
+        type=float,
+        default=None,
+        metavar="T",
+        help="Override model.temperature for all agents. Env: COLLABSIM_MODEL_TEMPERATURE.",
+    )
     args = parser.parse_args(argv)
+
+    load_env_file()
+
+    provider_override, name_override, temp_override = _resolve_model_cli_env(args)
 
     try:
         config = load_experiment_config(args.config)
@@ -57,6 +83,17 @@ def main(argv: list[str] | None = None) -> int:
     except (ConfigError, ConfigSchemaError) as exc:
         print(f"Config validation failed: {exc}", file=sys.stderr)
         return 1
+
+    n_ov = apply_agent_model_overrides(
+        config,
+        provider=provider_override,
+        name=name_override,
+        temperature=temp_override,
+    )
+    if _model_override_requested(provider_override, name_override, temp_override) and n_ov > 0:
+        print(f"Applied model overrides to {n_ov} agent(s).", file=sys.stderr)
+    elif _model_override_requested(provider_override, name_override, temp_override) and n_ov == 0:
+        print("Model overrides requested but no agents found in config.", file=sys.stderr)
 
     if not args.run_id.strip():
         print("run_id must be a non-empty string.", file=sys.stderr)
@@ -267,6 +304,56 @@ def _is_time_mode(config: dict[str, object]) -> bool:
     if not isinstance(protocol, dict):
         return False
     return protocol.get("step_mode") == "time"
+
+
+def _nonempty_str(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    stripped = value.strip()
+    return stripped if stripped else None
+
+
+def _env_optional_str(key: str) -> str | None:
+    raw = os.environ.get(key)
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return stripped if stripped else None
+
+
+def _env_optional_float(key: str) -> float | None:
+    raw = os.environ.get(key)
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    try:
+        return float(stripped)
+    except ValueError:
+        print(f"Warning: ignoring invalid float in {key}={raw!r}.", file=sys.stderr)
+        return None
+
+
+def _resolve_model_cli_env(args: argparse.Namespace) -> tuple[str | None, str | None, float | None]:
+    provider = _nonempty_str(getattr(args, "model_provider", None)) or _env_optional_str(
+        "COLLABSIM_MODEL_PROVIDER"
+    )
+    name = _nonempty_str(getattr(args, "model_name", None)) or _env_optional_str("COLLABSIM_MODEL_NAME")
+    temp_override: float | None = getattr(args, "model_temperature", None)
+    if temp_override is None:
+        temp_override = _env_optional_float("COLLABSIM_MODEL_TEMPERATURE")
+    return provider, name, temp_override
+
+
+def _model_override_requested(
+    provider: str | None,
+    name: str | None,
+    temperature: float | None,
+) -> bool:
+    return provider is not None or name is not None or temperature is not None
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ class ActionValidationError(Exception):
 
 
 ACTION_TYPES: tuple[str, ...] = (
-    "communicate",
+    "message",
     "decide",
     "propose",
     "respond",
@@ -31,6 +31,10 @@ ACTION_TYPES: tuple[str, ...] = (
     "make_individual_investment",
     "make_group_investment",
     "update_map_progress",
+    "draw",
+    "erase",
+    "undo",
+    "reset",
     "do_nothing",
 )
 
@@ -60,8 +64,8 @@ def validate_action(action: Mapping[str, Any]) -> None:
     if not isinstance(payload, Mapping):
         raise ActionValidationError("Action payload must be a mapping/object.")
 
-    if action_type == "communicate":
-        _validate_communicate(payload)
+    if action_type == "message":
+        _validate_message(payload)
     elif action_type == "decide":
         _validate_decide(payload)
     elif action_type == "propose":
@@ -88,21 +92,29 @@ def validate_action(action: Mapping[str, Any]) -> None:
         _validate_make_group_investment(payload)
     elif action_type == "update_map_progress":
         _validate_update_map_progress(payload)
+    elif action_type == "draw":
+        _validate_map_draw(payload)
+    elif action_type == "erase":
+        _validate_map_erase(payload)
+    elif action_type == "undo":
+        _validate_map_undo_reset(payload)
+    elif action_type == "reset":
+        _validate_map_undo_reset(payload)
     elif action_type == "do_nothing":
         _validate_do_nothing(payload)
 
 
-def _validate_communicate(payload: Mapping[str, Any]) -> None:
+def _validate_message(payload: Mapping[str, Any]) -> None:
     _require_fields(payload, ("channel", "content", "content_type"))
     channel = payload["channel"]
     if channel not in ("broadcast", "direct"):
-        raise ActionValidationError("communicate.channel must be broadcast or direct.")
+        raise ActionValidationError("message.channel must be broadcast or direct.")
     if channel == "direct":
         recipients = payload.get("recipients")
         if not isinstance(recipients, list) or not recipients:
-            raise ActionValidationError("communicate.recipients must be a non-empty list.")
+            raise ActionValidationError("message.recipients must be a non-empty list.")
     if payload["content_type"] not in ("text", "json"):
-        raise ActionValidationError("communicate.content_type must be text or json.")
+        raise ActionValidationError("message.content_type must be text or json.")
 
 
 def _validate_decide(payload: Mapping[str, Any]) -> None:
@@ -221,6 +233,42 @@ def _validate_update_map_progress(payload: Mapping[str, Any]) -> None:
     map_progress = payload.get("map_progress")
     if not isinstance(map_progress, Mapping):
         raise ActionValidationError("update_map_progress.map_progress must be an object.")
+
+
+def _validate_map_draw(payload: Mapping[str, Any]) -> None:
+    cells = payload.get("cells")
+    if cells is None:
+        cells = payload.get("drawn_points")
+    if not isinstance(cells, list) or not cells:
+        raise ActionValidationError("draw.cells must be a non-empty list of [row, col].")
+    for item in cells:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise ActionValidationError("draw.cells entries must be [row, col].")
+        row, col = item
+        if not isinstance(row, int) or not isinstance(col, int):
+            raise ActionValidationError("draw.cells rows/cols must be integers.")
+
+
+def _validate_map_erase(payload: Mapping[str, Any]) -> None:
+    cells = payload.get("cells")
+    if not isinstance(cells, list) or not cells:
+        raise ActionValidationError("erase.cells must be a non-empty list of [row, col].")
+    for item in cells:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise ActionValidationError("erase.cells entries must be [row, col].")
+        row, col = item
+        if not isinstance(row, int) or not isinstance(col, int):
+            raise ActionValidationError("erase.cells rows/cols must be integers.")
+
+
+def _validate_map_undo_reset(payload: Mapping[str, Any]) -> None:
+    for key in payload:
+        if key == "reason":
+            val = payload.get("reason")
+            if val is not None and not isinstance(val, str):
+                raise ActionValidationError("undo/reset.reason must be a string when provided.")
+            continue
+        raise ActionValidationError(f"undo/reset payload does not support field: {key}")
 
 
 def _validate_do_nothing(payload: Mapping[str, Any]) -> None:

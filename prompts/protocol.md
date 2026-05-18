@@ -1,2 +1,1 @@
-Experiment protocol:
-{protocol_json}
+{protocol_json}{communication_limits}

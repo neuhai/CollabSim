@@ -1,0 +1,82 @@
+# Peer economic “awareness dashboard”: full ShapeFactory participant rows for peers in observations.
+experiment:
+  id: "study_sf_awareness_dashboard"
+  seed: 42
+  duration_sec: 300
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_shapefactory_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format_shapefactory.md"
+  action: "prompts/action_prompt.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - id: "A"
+    model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}
+  - id: "B"
+    model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}
+  - id: "C"
+    model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}
+  - id: "D"
+    model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}
+
+action_space:
+  enabled:
+    - "message"
+    - "produce_shape"
+    - "propose_trade_offer"
+    - "trade_response"
+    - "cancel_trade_offer"
+    - "fulfill_order"
+    - "do_nothing"
+
+controls:
+  communication:
+    mode: "direct"
+
+task:
+  type: "shapefactory"
+  peer_economic_dashboard: true
+  target_steps: 100000
+  starting_money: 200
+  regular_cost: 40
+  specialty_cost: 15
+  min_trade_price: 15
+  max_trade_price: 100
+  incentive_money: 60
+  max_production_num: 3
+  shapes_order: 4
+  shapes_types: 3
+  shape_options: ["circle", "square", "triangle"]
+  specialties:
+    A: "circle"
+    B: "square"
+    C: "triangle"
+    D: "circle"
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "time"
+  agent_trigger_interval_sec: 20
+  produce_shape_delay_sec: 10
+  termination:
+    condition: "time_elapsed"
+    noop_consecutive_cycles: 3
+  max_concurrent_requests: 4
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_agent_n_actions"
+  every_n_actions: 5
+  templates: ["grounding_v1"]
+  questions_path: "prompts/interview_questions_shape_factory_daytrader.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/study_conditions/shapefactory/awareness_dashboard"
+  observation_events: true

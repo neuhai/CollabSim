@@ -85,6 +85,35 @@ class ShapeFactoryVisibilityTests(unittest.TestCase):
         self.assertEqual(len(visible_b), 1)
         self.assertEqual(visible_b[0].get("event_type"), "shape_produced")
 
+    def test_awareness_dashboard_hides_peer_tasks_and_in_production(self) -> None:
+        cfg = dict(_shapefactory_config())
+        task = dict(cfg["task"])  # type: ignore[arg-type]
+        task["peer_economic_dashboard"] = True
+        cfg["task"] = task
+        state = ExperimentState(
+            agents={},
+            task_state={},
+            resources={},
+            turn_state={},
+            buffers={},
+        )
+        controller = build_controller(state, config=cfg)
+        participants = controller.state.task_state["participants"]
+        assert isinstance(participants, dict)
+        participants["B"]["money"] = 50.0
+        participants["B"]["tasks"] = ["square", "circle"]
+        participants["B"]["in_production"] = ["triangle"]
+
+        obs_a = controller._build_observation_for_agent("A")
+        ts = obs_a.state["task_state"]
+        assert isinstance(ts, dict)
+        pb = ts["participants"]["B"]
+        self.assertEqual(pb.get("money"), 50.0)
+        self.assertNotIn("tasks", pb)
+        self.assertNotIn("in_production", pb)
+        pa = ts["participants"]["A"]
+        self.assertIn("tasks", pa)
+
 
 if __name__ == "__main__":
     unittest.main()

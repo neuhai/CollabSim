@@ -2,10 +2,11 @@ Answer the interviewer probe below. Respond with JSON only.
 {construct_line}
 Question: {prompt}
 
-Observation:
-{observation_json}
+Status update:
+{status_update}
 
-Return JSON with the following shape:
+<Response Format>
+Return JSON with the following format:
 {{
   "answer": "...",
   "confidence": 0.0,

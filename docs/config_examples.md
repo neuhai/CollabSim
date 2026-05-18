@@ -72,7 +72,7 @@ agents:
     role: "planner"
     model: { provider: "local", name: "dummy", temperature: 0.0 }
 action_space:
-  enabled: ["communicate", "decide"]
+  enabled: ["message", "decide"]
 controls: {}
 task:
   type: "hidden_profile"
@@ -110,7 +110,7 @@ agents:
     role: "trader"
     model: { provider: "local", name: "dummy", temperature: 0.0 }
 action_space:
-  enabled: ["communicate", "produce_shape", "propose_trade_offer", "trade_response", "cancel_trade_offer", "fulfill_order"]
+  enabled: ["message", "produce_shape", "propose_trade_offer", "trade_response", "cancel_trade_offer", "fulfill_order"]
 controls: {}
 task:
   type: "shapefactory"
@@ -143,7 +143,7 @@ agents:
     role: "investor"
     model: { provider: "local", name: "dummy", temperature: 0.0 }
 action_space:
-  enabled: ["communicate", "make_investment"]
+  enabled: ["message", "make_investment"]
 controls: {}
 task:
   type: "daytrader"
@@ -175,7 +175,7 @@ agents:
     role: "follower"
     model: { provider: "local", name: "dummy", temperature: 0.0 }
 action_space:
-  enabled: ["communicate", "update_map_progress"]
+  enabled: ["message", "update_map_progress"]
 controls: {}
 task:
   type: "maptask"

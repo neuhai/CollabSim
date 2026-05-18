@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable
 
+from src.tasks.maptask_drawing_accuracy import compute_drawing_accuracy_snapshot, load_score_board_file
 from src.tasks.registry import TaskDefinition
 
 
@@ -24,7 +26,8 @@ def maptask_init_state(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("task.target_steps must be a positive integer for maptask.")
     roles = task_cfg.get("roles", {})
     maps = task_cfg.get("maps", {})
-    landmarks_bundle = _load_landmarks_bundle(config, task_cfg)
+    material = _load_map_material(config, task_cfg)
+    landmarks_bundle = None if material is not None else _load_landmarks_bundle(config, task_cfg)
     if not isinstance(roles, dict):
         roles = {}
     if not isinstance(maps, dict):
@@ -47,19 +50,42 @@ def maptask_init_state(config: dict[str, Any]) -> dict[str, Any]:
         if landmarks_bundle:
             merged_map_info.update(_build_role_map_info(landmarks_bundle, role))
         merged_map_info.update(deepcopy(map_info))
-        _attach_map_text(config, merged_map_info)
+        if material is not None:
+            _apply_map_material_to_map_info(merged_map_info, role, material)
+        else:
+            _attach_map_text(config, merged_map_info)
         participants[agent_id] = {
             "role": role,
             "map": merged_map_info,
             "map_progress": {},
         }
-    return {
+    canvas_vis = task_cfg.get("canvas_visibility", True)
+    visibility_line = (
+        "- Canvas visibility is ON: the guide may observe the follower's drawing updates via shared task state and events."
+        if canvas_vis is not False
+        else "- Canvas visibility is OFF: the guide does not see the follower's route drawing updates."
+    )
+    state: dict[str, Any] = {
         "task_type": "maptask",
         "target_steps": target_steps,
         "steps_taken": 0,
         "complete": False,
         "participants": participants,
+        "game_rule_canvas_visibility_line": visibility_line,
+        "maptask_canvas_visibility": canvas_vis is not False,
     }
+    if material is not None:
+        state["reference_route_cells"] = [[row, col] for row, col in material["route_cells"]]
+        sb_matrix = material.get("score_board_matrix")
+        if isinstance(sb_matrix, list) and sb_matrix:
+            state["drawing_score_board"] = sb_matrix
+    for aid, pdata in participants.items():
+        if isinstance(pdata, dict) and pdata.get("role") == "follower":
+            _prime_follower_base_grid(pdata)
+    for aid, pdata in participants.items():
+        if isinstance(pdata, dict) and pdata.get("role") == "follower":
+            _sync_follower_live_canvas(state, aid, pdata)
+    return state
 
 
 def maptask_step(state: dict[str, Any]) -> dict[str, Any]:
@@ -85,10 +111,8 @@ def maptask_apply_action(
 ) -> bool:
     """Apply MapTask-specific actions against task state."""
 
-    if action.get("type") != "update_map_progress":
-        return False
-    payload = action.get("payload", {})
-    if not isinstance(payload, dict):
+    action_type = action.get("type")
+    if action_type not in ("update_map_progress", "draw", "erase", "undo", "reset"):
         return False
     task_state = state.task_state
     if not isinstance(task_state, dict) or task_state.get("task_type") != "maptask":
@@ -99,19 +123,81 @@ def maptask_apply_action(
     me = participants.get(actor_id)
     if not isinstance(me, dict):
         return False
+
+    if action_type in ("update_map_progress", "draw", "erase", "undo", "reset"):
+        role = me.get("role")
+        if role != "follower":
+            emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={
+                    "action": {"type": action_type, "payload": action.get("payload")},
+                    "error_message": "Only the follower can edit the route map.",
+                },
+            )
+            return True
+
+    if action_type in ("update_map_progress", "draw"):
+        payload = action.get("payload", {})
+        if not isinstance(payload, dict):
+            emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={
+                    "action": {"type": action_type, "payload": action.get("payload")},
+                    "error_message": "Malformed payload object.",
+                },
+            )
+            return True
+        progress = payload.get("map_progress")
+        if action_type == "draw":
+            if not isinstance(progress, dict):
+                progress = {}
+            cells = payload.get("cells")
+            if cells is None:
+                cells = payload.get("drawn_points")
+            payload = {
+                "map_progress": {**progress, "drawn_points": cells},
+                "drawn_points": cells,
+            }
+        return _maptask_apply_follower_draw_payload(state, actor_id, payload, emit_event, log_type=action_type)
+
+    if action_type == "erase":
+        payload = action.get("payload", {})
+        return _maptask_apply_follower_erase(state, actor_id, payload if isinstance(payload, dict) else {}, emit_event)
+
+    if action_type == "undo":
+        return _maptask_apply_follower_undo(state, actor_id, emit_event)
+
+    if action_type == "reset":
+        return _maptask_apply_follower_reset(state, actor_id, emit_event)
+
+    return False
+
+
+def _maptask_apply_follower_draw_payload(
+    state: Any,
+    actor_id: str,
+    payload: dict[str, Any],
+    emit_event: Callable[..., dict[str, Any]],
+    *,
+    log_type: str,
+) -> bool:
+    task_state = state.task_state
+    participants = task_state.get("participants", {})
+    me = participants.get(actor_id, {})
+
     progress = payload.get("map_progress")
     if not isinstance(progress, dict):
-        return False
-
-    role = me.get("role")
-    if role != "follower":
         emit_event(
             event_type="action_rejected",
             actor_id=actor_id,
             visibility="system",
             payload={
-                "action": {"type": "update_map_progress", "payload": payload},
-                "error_message": "Only follower can update map progress.",
+                "action": {"type": log_type, "payload": payload},
+                "error_message": "update_map_progress requires map_progress object (may be empty plus drawn_points).",
             },
         )
         return True
@@ -123,8 +209,8 @@ def maptask_apply_action(
             actor_id=actor_id,
             visibility="system",
             payload={
-                "action": {"type": "update_map_progress", "payload": payload},
-                "error_message": "update_map_progress requires drawn_points as a list of [row,col].",
+                "action": {"type": log_type, "payload": payload},
+                "error_message": "Route draw requires drawn_points (or draw.cells) as a list of [row,col].",
             },
         )
         return True
@@ -136,7 +222,7 @@ def maptask_apply_action(
             actor_id=actor_id,
             visibility="system",
             payload={
-                "action": {"type": "update_map_progress", "payload": payload},
+                "action": {"type": log_type, "payload": payload},
                 "error_message": "Follower map copy is unavailable.",
             },
         )
@@ -156,7 +242,7 @@ def maptask_apply_action(
             actor_id=actor_id,
             visibility="system",
             payload={
-                "action": {"type": "update_map_progress", "payload": payload},
+                "action": {"type": log_type, "payload": payload},
                 "error_message": error_message,
             },
         )
@@ -170,7 +256,7 @@ def maptask_apply_action(
             actor_id=actor_id,
             visibility="system",
             payload={
-                "action": {"type": "update_map_progress", "payload": payload},
+                "action": {"type": log_type, "payload": payload},
                 "error_message": f"All submitted points are already drawn — no new cells were added.{pos_hint}",
             },
         )
@@ -180,8 +266,11 @@ def maptask_apply_action(
     if not isinstance(current, dict):
         current = {}
         me["map_progress"] = current
-    current.update(progress)
-    current["last_drawn_points"] = [[row, col] for row, col in added_points]
+    merged_progress = {**progress}
+    merged_progress["drawn_points"] = [[row, col] for row, col in drawn_points]
+    current.update(merged_progress)
+    ordered_added = [pt for pt in drawn_points if pt in added_points]
+    current["last_drawn_points"] = [[row, col] for row, col in ordered_added]
     current["total_drawn_points"] = len(existing_points.union(added_points))
 
     all_points = existing_points.union(added_points)
@@ -190,21 +279,417 @@ def maptask_apply_action(
     if drawn_points:
         me["current_position"] = list(drawn_points[-1])
 
+    me.setdefault("map_draw_batches", []).append([[row, col] for row, col in ordered_added])
+
     finish_cell = _finish_cell(task_state)
     if isinstance(finish_cell, tuple) and finish_cell in all_points:
         task_state["complete"] = True
 
+    mp_payload: dict[str, Any] = {
+        "map_progress": dict(current),
+        "drawn_points_added": [[row, col] for row, col in ordered_added],
+        "drawn_points_total": len(all_points),
+    }
+    acc = compute_drawing_accuracy_snapshot(task_state)
+    if acc is not None:
+        mp_payload["drawing_accuracy"] = acc
     emit_event(
         event_type="map_progress_updated",
         actor_id=actor_id,
         visibility="public",
-        payload={
-            "map_progress": dict(current),
-            "drawn_points_added": [[row, col] for row, col in added_points],
-            "drawn_points_total": len(all_points),
-        },
+        payload=mp_payload,
     )
+    _sync_follower_live_canvas(task_state, actor_id, me)
     return True
+
+
+def _maptask_apply_follower_erase(
+    state: Any,
+    actor_id: str,
+    payload: dict[str, Any],
+    emit_event: Callable[..., dict[str, Any]],
+) -> bool:
+    task_state = state.task_state
+    participants = task_state.get("participants", {})
+    me = participants.get(actor_id, {})
+    cells_raw = payload.get("cells")
+    if not isinstance(cells_raw, list):
+        emit_event(
+            event_type="action_rejected",
+            actor_id=actor_id,
+            visibility="system",
+            payload={"action": {"type": "erase", "payload": payload}, "error_message": "erase.cells required."},
+        )
+        return True
+    erase_points: list[tuple[int, int]] = []
+    for item in cells_raw:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={"action": {"type": "erase", "payload": payload}, "error_message": "erase.cells must be [row,col]."},
+            )
+            return True
+        row, col = item
+        if not isinstance(row, int) or not isinstance(col, int):
+            emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={"action": {"type": "erase", "payload": payload}, "error_message": "erase cells must be integers."},
+            )
+            return True
+        erase_points.append((row, col))
+
+    drawn = _normalize_point_set(me.get("drawn_route_points", []))
+    for p in erase_points:
+        if p not in drawn:
+            emit_event(
+                event_type="action_rejected",
+                actor_id=actor_id,
+                visibility="system",
+                payload={
+                    "action": {"type": "erase", "payload": payload},
+                    "error_message": f"Cannot erase {p}: not part of the current drawn route.",
+                },
+            )
+            return True
+
+    for p in erase_points:
+        drawn.discard(p)
+
+    me["map_draw_batches"] = []
+    _rebuild_follower_grid_from_drawn(me, drawn)
+    me["drawn_route_points"] = [[row, col] for row, col in sorted(drawn)]
+    me["current_position"] = _follower_cursor_after_mutations(me, drawn)
+    current = me.get("map_progress")
+    if isinstance(current, dict):
+        current["total_drawn_points"] = len(drawn)
+        current.pop("last_drawn_points", None)
+
+    _maptask_refresh_route_completion(task_state, drawn)
+
+    mp_payload_er: dict[str, Any] = {
+        "map_progress": dict(me["map_progress"]) if isinstance(me.get("map_progress"), dict) else {},
+        "drawn_points_erased": [[row, col] for row, col in erase_points],
+        "drawn_points_total": len(drawn),
+    }
+    acc_er = compute_drawing_accuracy_snapshot(task_state)
+    if acc_er is not None:
+        mp_payload_er["drawing_accuracy"] = acc_er
+    emit_event(
+        event_type="map_progress_updated",
+        actor_id=actor_id,
+        visibility="public",
+        payload=mp_payload_er,
+    )
+    _sync_follower_live_canvas(task_state, actor_id, me)
+    return True
+
+
+def _maptask_apply_follower_undo(
+    state: Any,
+    actor_id: str,
+    emit_event: Callable[..., dict[str, Any]],
+) -> bool:
+    task_state = state.task_state
+    participants = task_state.get("participants", {})
+    me = participants.get(actor_id, {})
+    batches = me.get("map_draw_batches")
+    if not isinstance(batches, list) or not batches:
+        emit_event(
+            event_type="action_rejected",
+            actor_id=actor_id,
+            visibility="system",
+            payload={"action": {"type": "undo", "payload": {}}, "error_message": "Nothing to undo."},
+        )
+        return True
+    batches.pop()
+    points: set[tuple[int, int]] = set()
+    for batch in batches:
+        if not isinstance(batch, list):
+            continue
+        for item in batch:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                r, c = item
+                if isinstance(r, int) and isinstance(c, int):
+                    points.add((r, c))
+
+    _rebuild_follower_grid_from_drawn(me, points)
+    me["drawn_route_points"] = [[row, col] for row, col in sorted(points)]
+    me["current_position"] = _follower_cursor_after_mutations(me, points)
+
+    current = me.get("map_progress")
+    if isinstance(current, dict):
+        current["total_drawn_points"] = len(points)
+        current.pop("last_drawn_points", None)
+
+    _maptask_refresh_route_completion(task_state, points)
+
+    mp_payload_undo: dict[str, Any] = {
+        "map_progress": dict(me["map_progress"]) if isinstance(me.get("map_progress"), dict) else {},
+        "undo": True,
+        "drawn_points_total": len(points),
+    }
+    acc_u = compute_drawing_accuracy_snapshot(task_state)
+    if acc_u is not None:
+        mp_payload_undo["drawing_accuracy"] = acc_u
+    emit_event(
+        event_type="map_progress_updated",
+        actor_id=actor_id,
+        visibility="public",
+        payload=mp_payload_undo,
+    )
+    _sync_follower_live_canvas(task_state, actor_id, me)
+    return True
+
+
+def _maptask_apply_follower_reset(
+    state: Any,
+    actor_id: str,
+    emit_event: Callable[..., dict[str, Any]],
+) -> bool:
+    task_state = state.task_state
+    participants = task_state.get("participants", {})
+    me = participants.get(actor_id, {})
+    me["map_draw_batches"] = []
+    me["drawn_route_points"] = []
+    me["map_progress"] = {}
+    base = me.get("map_base_grid")
+    if isinstance(base, list) and base:
+        me["map_working_grid"] = deepcopy(base)
+        me["map_working_text"] = "\n".join("".join(row) for row in me["map_working_grid"])
+    else:
+        _ensure_working_grid(me)
+    start = _follower_start_cell(me)
+    me["current_position"] = list(start) if start is not None else None
+    task_state["complete"] = False
+
+    mp_payload_rs: dict[str, Any] = {
+        "map_progress": {},
+        "reset": True,
+        "drawn_points_total": 0,
+    }
+    acc_r = compute_drawing_accuracy_snapshot(task_state)
+    if acc_r is not None:
+        mp_payload_rs["drawing_accuracy"] = acc_r
+    emit_event(
+        event_type="map_progress_updated",
+        actor_id=actor_id,
+        visibility="public",
+        payload=mp_payload_rs,
+    )
+    _sync_follower_live_canvas(task_state, actor_id, me)
+    return True
+
+
+def _sync_follower_live_canvas(
+    task_state: dict[str, Any],
+    follower_id: str,
+    participant: dict[str, Any],
+) -> None:
+    """Mirror follower canvas at task_state top-level for guide prompts when canvas visibility is on."""
+
+    if task_state.get("maptask_canvas_visibility") is False:
+        task_state.pop("maptask_follower_live_canvas", None)
+        return
+    wt = participant.get("map_working_text")
+    task_state["maptask_follower_live_canvas"] = {
+        "follower_id": follower_id,
+        "drawn_route_points": participant.get("drawn_route_points", []),
+        "current_position": participant.get("current_position"),
+        "map_working_text": wt if isinstance(wt, str) else "",
+    }
+
+
+def _ascii_without_legend(text: str) -> str:
+    cut = text.find("\n# Legend")
+    if cut != -1:
+        text = text[:cut]
+    return text.rstrip("\n")
+
+
+def _strip_route_cells(text: str) -> str:
+    body = _ascii_without_legend(text)
+    return "\n".join(line.replace("*", ".") for line in body.splitlines())
+
+
+def _load_map_material(config: dict[str, Any], task_cfg: dict[str, Any]) -> dict[str, Any] | None:
+    spec = task_cfg.get("map_material")
+    if not isinstance(spec, dict):
+        return None
+    mj = spec.get("map_json")
+    rj = spec.get("map_route_json")
+    rt = spec.get("map_route_txt")
+    if not all(isinstance(x, str) and x.strip() for x in (mj, rj, rt)):
+        return None
+    map_json_path = _resolve_task_file_path(config, mj.strip())
+    route_json_path = _resolve_task_file_path(config, rj.strip())
+    route_txt_path = _resolve_task_file_path(config, rt.strip())
+    try:
+        map_spec = json.loads(map_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"task.map_material.map_json unreadable or invalid JSON: {exc}") from exc
+    if not isinstance(map_spec, dict):
+        raise ValueError("task.map_material.map_json must contain a JSON object.")
+    try:
+        route_obj = json.loads(route_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"task.map_material.map_route_json unreadable or invalid JSON: {exc}") from exc
+    if not isinstance(route_obj, dict):
+        raise ValueError("task.map_material.map_route_json must contain a JSON object.")
+    route_cells = route_obj.get("route_cells")
+    if not isinstance(route_cells, list) or not route_cells:
+        raise ValueError("map_route_json.route_cells must be a non-empty list.")
+    normalized_route: list[tuple[int, int]] = []
+    for item in route_cells:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            r, c = item
+            if isinstance(r, int) and isinstance(c, int):
+                normalized_route.append((r, c))
+    if len(normalized_route) != len(route_cells):
+        raise ValueError("route_cells must be a list of [row, col] integer pairs.")
+    try:
+        route_txt_full = route_txt_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"task.map_material.map_route_txt unreadable: {exc}") from exc
+
+    ascii_guide = _ascii_without_legend(route_txt_full)
+    ascii_follower = _strip_route_cells(route_txt_full)
+    start_t = _coerce_cell(map_spec.get("start_cell"))
+    finish_t = normalized_route[-1]
+
+    sb_matrix: list[list[int]] | None = None
+    sb_txt = spec.get("score_board_txt")
+    if isinstance(sb_txt, str) and sb_txt.strip():
+        sb_path = _resolve_task_file_path(config, sb_txt.strip())
+    else:
+        sb_path = map_json_path.parent / "score_board.txt"
+    if sb_path.is_file():
+        try:
+            sb_matrix = load_score_board_file(sb_path)
+        except OSError:
+            sb_matrix = None
+
+    return {
+        "map_spec": map_spec,
+        "route_cells": normalized_route,
+        "ascii_guide": ascii_guide,
+        "ascii_follower": ascii_follower,
+        "start_cell": start_t,
+        "finish_cell": finish_t,
+        "score_board_matrix": sb_matrix,
+    }
+
+
+def _apply_map_material_to_map_info(map_info: dict[str, Any], role: str, material: dict[str, Any]) -> None:
+    spec = material["map_spec"]
+    af_lines = material["ascii_follower"].splitlines()
+    ag_lines = material["ascii_guide"].splitlines()
+    rows = max(len(af_lines), len(ag_lines))
+    cols = max(max((len(line) for line in af_lines), default=0), max((len(line) for line in ag_lines), default=0))
+    landmarks = spec.get("landmarks")
+    map_info["grid"] = {"rows": rows, "cols": cols}
+    if isinstance(landmarks, dict):
+        map_info["landmarks"] = deepcopy(landmarks)
+    map_info["map_format"] = "ascii_txt"
+    sp: dict[str, Any] = {}
+    sc = material["start_cell"]
+    if isinstance(sc, tuple):
+        sp["start"] = {"cell": [sc[0], sc[1]]}
+    fc = material["finish_cell"]
+    if isinstance(fc, tuple):
+        sp["finish"] = {"cell": [fc[0], fc[1]]}
+    map_info["special_points"] = sp
+    map_json_txt = json.dumps(spec, ensure_ascii=False, indent=2)
+    route_txt = json.dumps({"route_cells": [list(p) for p in material["route_cells"]]}, ensure_ascii=False)
+    if role == "guider":
+        map_info["map_text"] = material["ascii_guide"]
+        map_info["current_map_prompt"] = (
+            "Map specification (JSON):\n"
+            + map_json_txt
+            + "\n\nGround-truth route as ordered [row, col] cells:\n"
+            + route_txt
+            + "\n\nASCII map (route cells marked '*'; borders/obstacles '#'; start 'S'):\n"
+            + material["ascii_guide"]
+        )
+    else:
+        map_info["map_text"] = material["ascii_follower"]
+        map_info["current_map_prompt"] = (
+            "Map specification (JSON):\n"
+            + map_json_txt
+            + "\n\nASCII map for the follower (route hidden; '*' replaced with walkable '.'):\n"
+            + material["ascii_follower"]
+        )
+    map_info["map_rows"] = rows
+    map_info["map_cols"] = cols
+
+
+def _prime_follower_base_grid(participant: dict[str, Any]) -> None:
+    grid = _ensure_working_grid(participant)
+    if grid:
+        participant["map_base_grid"] = deepcopy(grid)
+    participant["map_draw_batches"] = []
+
+
+def _rebuild_follower_grid_from_drawn(participant: dict[str, Any], drawn: set[tuple[int, int]]) -> None:
+    base = participant.get("map_base_grid")
+    if not isinstance(base, list) or not base:
+        _ensure_working_grid(participant)
+        participant["map_base_grid"] = deepcopy(participant["map_working_grid"])
+        base = participant.get("map_base_grid")
+    if not isinstance(base, list):
+        return
+    grid = deepcopy(base)
+    for row, col in drawn:
+        if row < 0 or col < 0 or row >= len(grid):
+            continue
+        if col >= len(grid[row]):
+            continue
+        ch = grid[row][col]
+        if ch not in {"S", "F", "#"}:
+            grid[row][col] = "."
+    participant["map_working_grid"] = grid
+    participant["map_working_text"] = "\n".join("".join(r) for r in grid)
+
+
+def _follower_start_cell(participant: dict[str, Any]) -> tuple[int, int] | None:
+    map_info = participant.get("map")
+    if not isinstance(map_info, dict):
+        return None
+    special = map_info.get("special_points")
+    if not isinstance(special, dict):
+        return None
+    start = special.get("start")
+    if isinstance(start, dict):
+        return _coerce_cell(start.get("cell"))
+    return None
+
+
+def _follower_cursor_after_mutations(participant: dict[str, Any], drawn: set[tuple[int, int]]) -> list[int] | None:
+    if not drawn:
+        start = _follower_start_cell(participant)
+        return list(start) if start is not None else None
+    batches = participant.get("map_draw_batches")
+    if isinstance(batches, list) and batches:
+        last_batch = batches[-1]
+        if isinstance(last_batch, list) and last_batch:
+            tail = last_batch[-1]
+            if isinstance(tail, (list, tuple)) and len(tail) == 2:
+                r, c = tail
+                if isinstance(r, int) and isinstance(c, int) and (r, c) in drawn:
+                    return [r, c]
+    ordered = sorted(drawn)
+    return list(ordered[-1])
+
+
+def _maptask_refresh_route_completion(task_state: dict[str, Any], drawn: set[tuple[int, int]]) -> None:
+    finish_cell = _finish_cell(task_state)
+    if isinstance(finish_cell, tuple) and finish_cell in drawn:
+        task_state["complete"] = True
+    else:
+        task_state["complete"] = False
 
 
 def _load_landmarks_bundle(config: dict[str, Any], task_cfg: dict[str, Any]) -> dict[str, Any] | None:

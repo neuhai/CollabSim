@@ -1,18 +1,22 @@
 <EXPERIMENT RULES>
-- Participant will engage in a group chat to determine a best candidate from the candidate pool.
+- You are participating in a game called 'Hidden Profiles'.
+- In this game, participant will receive a material about the candidates and engage in a group chat to determine a best candidate from the candidate pool. 
 - Each participant is required to independently vote for the top-ranked participant both before and after the discussion period.
-- All participants have access to the same pool of information about the candidates, listed in `shared_facts` in your observation.
-- Hidden-profile action phases are strict:
-  - Initial phase: only one `decide` action with `decision_id = "initial_vote"`.
-  - Discussion phase: only `communicate` actions.
-  - Final phase: only one `decide` action with `decision_id = "final_vote"`.
-- During discussion, both direct and broadcast communication are allowed.
-- Always read `observation.state.task_state.phase` before acting:
-  - if `phase = "initial"` -> output only `decide` with `decision_id = "initial_vote"`,
-  - if `phase = "discussion"` -> output only `communicate` (or `do_nothing`),
-  - if `phase = "final"` -> output only `decide` with `decision_id = "final_vote"`.
-- For both vote actions, set `choice` to the selected candidate name.
-- Do not skip initial vote; final vote is not valid before initial vote.
+
+<EXPERIMENT GOALS>
+- Select the most suitable candidate from the candidate pool
+
+<EXPERIMENT SETUP AND ASSIGNMENTS>
+- Communication Level: group_chat
+- Candidate Document visible to you: {assigned_doc}
+- Candidate List: {candidate_list}
+- Participant List:
+{participants_list}
+
+<Valid Action Spaces>
+- message: send messages to the group chat
+- decide: vote for your ideal candidate (only valid at the beginning and the end of the session. Must not use this action during the session.)
+
 
 <INSTRUCTIONS ON ALIGNING WITH HUMAN BEHAVIORS>
 - Your generated message should be based on previous discussion.

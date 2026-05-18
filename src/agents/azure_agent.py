@@ -11,6 +11,14 @@ import urllib.request
 import urllib.error
 
 from src.agents.interface import ActionProposal, AgentMetadata, Observation
+from src.agents.action_prompt_compose import compose_action_prompt, compose_probe_prompt
+from src.agents.llm_conversation import (
+    build_messages_for_request,
+    clear_llm_chat_thread,
+    commit_llm_turn,
+    flatten_messages_for_responses_input,
+    init_llm_chat_thread,
+)
 from src.probe.probe import ProbeResponse
 from src.utils.env import load_env_file, load_text_file
 import os
@@ -33,6 +41,7 @@ class AzureOpenAIAgent:
     persona_profile: str | None = None
     protocol_context: dict[str, Any] | None = None
     decide_reveal: str | None = None
+    communication_limits: str = ""
 
     def __post_init__(self) -> None:
         load_env_file()
@@ -40,9 +49,15 @@ class AzureOpenAIAgent:
             raise ValueError("AZURE_OPENAI_API_KEY is required for AzureOpenAIAgent.")
         if not os.environ.get("AZURE_OPENAI_ENDPOINT"):
             raise ValueError("AZURE_OPENAI_ENDPOINT is required for AzureOpenAIAgent.")
+        self._llm_action_invocation = 0
+        self._llm_probe_invocation = 0
+        init_llm_chat_thread(self)
 
     def reset(self, seed: int | None = None) -> None:
         _ = seed
+        self._llm_action_invocation = 0
+        self._llm_probe_invocation = 0
+        clear_llm_chat_thread(self)
 
     def serialize(self) -> dict[str, Any]:
         return {}
@@ -51,8 +66,13 @@ class AzureOpenAIAgent:
         _ = state
 
     def context_update(self, observation: Observation) -> ActionProposal:
-        prompt, prompt_static, prompt_update = self._build_action_prompt(observation)
-        text = self._call_azure_openai(prompt)
+        inv = self._llm_action_invocation
+        use_full = inv == 0
+        prompt, prompt_static, prompt_update = self._build_action_prompt(observation, use_full_prompt=use_full)
+        messages = build_messages_for_request(self, prompt)
+        text = self._call_azure_openai(messages)
+        commit_llm_turn(self, prompt, text)
+        self._llm_action_invocation = inv + 1
         parsed = _parse_json(text)
         if not parsed:
             action = self._fallback_action("parse_failure")
@@ -91,8 +111,13 @@ class AzureOpenAIAgent:
         construct: str | None,
         observation: Observation,
     ) -> ProbeResponse:
-        query = self._build_probe_prompt(prompt, construct, observation)
-        text = self._call_azure_openai(query)
+        pinv = self._llm_probe_invocation
+        use_full = pinv == 0
+        query = self._build_probe_prompt(prompt, construct, observation, use_full_prompt=use_full)
+        messages = build_messages_for_request(self, query)
+        text = self._call_azure_openai(messages)
+        commit_llm_turn(self, query, text)
+        self._llm_probe_invocation = pinv + 1
         parsed = _parse_json(text)
         answer = parsed.get("answer") if isinstance(parsed, dict) else text.strip()
         confidence = parsed.get("confidence") if isinstance(parsed, dict) else None
@@ -104,59 +129,33 @@ class AzureOpenAIAgent:
             structured_fields=structured_fields if isinstance(structured_fields, dict) else None,
         )
 
-    def _build_action_prompt(self, observation: Observation) -> tuple[str, str, dict[str, Any]]:
+    def _build_action_prompt(
+        self, observation: Observation, *, use_full_prompt: bool = True
+    ) -> tuple[str, str, dict[str, Any]]:
         """Returns (full_prompt, static_prefix, observation_payload).
 
         full_prompt is sent to the API unchanged.
         static_prefix captures agent-level instructions (logged once per agent).
         observation_payload is the per-turn dynamic data (logged every turn).
         """
-        allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
-        decide_reveal = self.decide_reveal or "aggregated"
-        observation_payload: dict[str, Any] = {
-            "agent_id": self.metadata.agent_id,
-            "state": observation.state,
-            "visible_events": observation.visible_events,
-            "memory": observation.memory,
-        }
-        observation_json = json.dumps(observation_payload, ensure_ascii=False)
-        persona_profile = self.persona_profile or "Default collaborative persona."
-        persona_prompt = _render_template(self.persona_prompt_template, {"persona_profile": persona_profile})
-        protocol_prompt = _render_template(
-            self.protocol_prompt_template,
-            {"protocol_json": json.dumps(self.protocol_context or {}, ensure_ascii=False)},
+        return compose_action_prompt(
+            observation,
+            agent_id=self.metadata.agent_id,
+            role=self.metadata.role,
+            system_prompt=self.system_prompt,
+            persona_prompt_template=self.persona_prompt_template,
+            persona_profile=self.persona_profile,
+            task_prompt_template=self.task_prompt_template,
+            protocol_prompt_template=self.protocol_prompt_template,
+            protocol_context=self.protocol_context,
+            communication_limits=self.communication_limits,
+            action_space_prompt_template=self.action_space_prompt_template,
+            return_format_prompt_template=self.return_format_prompt_template,
+            action_prompt_template=self.action_prompt_template,
+            allowed_actions=self.allowed_actions,
+            decide_reveal=self.decide_reveal,
+            use_full_prompt=use_full_prompt,
         )
-        action_space_prompt = _render_template(self.action_space_prompt_template, {"allowed_actions": allowed})
-        return_format_prompt = _render_template(self.return_format_prompt_template, {"decide_reveal": decide_reveal})
-        action_prompt = _render_template(
-            self.action_prompt_template,
-            {
-                "allowed_actions": allowed,
-                "observation_json": observation_json,
-                "decide_reveal": decide_reveal,
-            },
-        )
-        static_prefix = (
-            f"{self.system_prompt}\n\n"
-            f"Your participant id is: {self.metadata.agent_id}\n\n"
-            f"{persona_prompt}\n\n"
-            f"{self.task_prompt_template}\n\n"
-            f"{protocol_prompt}\n\n"
-            f"{action_space_prompt}\n\n"
-            f"{return_format_prompt}"
-        )
-        full_prompt = (
-            f"{self.system_prompt}\n\n"
-            f"Your participant id is: {self.metadata.agent_id}\n\n"
-            f"{persona_prompt}\n\n"
-            f"{self.task_prompt_template}\n\n"
-            f"{protocol_prompt}\n\n"
-            f"{action_space_prompt}\n\n"
-            f"Observation:\n{observation_json}\n\n"
-            f"{return_format_prompt}\n\n"
-            f"{action_prompt}"
-        )
-        return full_prompt, static_prefix, observation_payload
 
     def _fallback_action(self, reason_code: str = "default") -> dict[str, Any]:
         if "do_nothing" in self.allowed_actions:
@@ -167,9 +166,9 @@ class AzureOpenAIAgent:
                 "default": "fallback: default",
             }
             return {"type": "do_nothing", "payload": {"reason": reason_map.get(reason_code, "fallback: default")}}
-        if "communicate" in self.allowed_actions:
+        if "message" in self.allowed_actions:
             return {
-                "type": "communicate",
+                "type": "message",
                 "payload": {
                     "channel": "broadcast",
                     "content": "Unable to parse model output; defaulting to status update.",
@@ -191,15 +190,18 @@ class AzureOpenAIAgent:
         if not isinstance(action_type, str):
             action_type = None
 
+        if action_type == "communicate":
+            action_type = "message"
+
         if action_type is None:
             if "message" in payload or "content" in payload:
-                action_type = "communicate"
+                action_type = "message"
             elif "decision" in payload or "choice" in payload or "plan" in payload:
                 action_type = "decide"
             elif "do_nothing" in self.allowed_actions:
                 action_type = "do_nothing"
 
-        if action_type == "communicate":
+        if action_type == "message":
             content = payload.get("content")
             if not isinstance(content, str) or not content:
                 message = payload.get("message")
@@ -211,7 +213,7 @@ class AzureOpenAIAgent:
             if content_type not in ("text", "json"):
                 content_type = "text"
             normalized = {
-                "type": "communicate",
+                "type": "message",
                 "payload": {
                     "channel": channel,
                     "content": content,
@@ -260,56 +262,29 @@ class AzureOpenAIAgent:
         prompt: str,
         construct: str | None,
         observation: Observation,
+        *,
+        use_full_prompt: bool = True,
     ) -> str:
-        allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
-        decide_reveal = self.decide_reveal or "aggregated"
-        observation_json = json.dumps(
-            {
-                "agent_id": self.metadata.agent_id,
-                "state": observation.state,
-                "visible_events": observation.visible_events,
-                "memory": observation.memory,
-            },
-            ensure_ascii=False,
-        )
-        persona_profile = self.persona_profile or "Default collaborative persona."
-        persona_prompt = _render_template(self.persona_prompt_template, {"persona_profile": persona_profile})
-        protocol_prompt = _render_template(
-            self.protocol_prompt_template,
-            {"protocol_json": json.dumps(self.protocol_context or {}, ensure_ascii=False)},
-        )
-        action_space_prompt = _render_template(self.action_space_prompt_template, {"allowed_actions": allowed})
-        probe_context = f"Construct: {construct}\n\n" if construct else ""
-        probe_prompt = (
-            "Instead of selecting an action, answer the probe items below.\n"
-            f"{probe_context}"
-            f"{prompt}\n\n"
-            "Return strict JSON only."
-        )
-        return (
-            f"{self.system_prompt}\n\n"
-            f"Your participant id is: {self.metadata.agent_id}\n\n"
-            f"{persona_prompt}\n\n"
-            f"{self.task_prompt_template}\n\n"
-            f"{protocol_prompt}\n\n"
-            f"{action_space_prompt}\n\n"
-            f"Observation:\n{observation_json}\n\n"
-            f"Action payload references:\n"
-            f"- communicate: {{\"channel\":\"broadcast|direct\",\"content\":\"...\",\"content_type\":\"text\",\"recipients\":[\"B\"] (required for direct)}}\n"
-            f"- decide: {{\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"{decide_reveal}\"}}\n"
-            f"- produce_shape: {{\"shape\":\"<choose_from_task_state>\",\"quantity\":1}}\n"
-            f"- propose_trade_offer: {{\"offer_type\":\"buy|sell\",\"shape\":\"<shape_from_task_state>\",\"price_per_unit\":20,\"target_id\":\"B\",\"quantity\":1}}\n"
-            f"- trade_response: {{\"transaction_id\":\"offer_2_1\",\"response_type\":\"accept|decline\"}}\n"
-            f"- cancel_trade_offer: {{\"transaction_id\":\"offer_2_1\"}}\n"
-            f"- fulfill_order: {{\"order_indices\":[0,1]}}\n"
-            f"- make_individual_investment: {{\"invest_price\":30}}\n"
-            f"- make_group_investment: {{\"invest_price\":30}}\n"
-            f"- update_map_progress: {{\"map_progress\":{{\"segment\":\"start_to_bridge\",\"status\":\"confirmed\"}}}}\n"
-            f"- do_nothing: {{\"reason\":\"...\"}}\n\n"
-            f"{probe_prompt}"
+        return compose_probe_prompt(
+            observation,
+            agent_id=self.metadata.agent_id,
+            role=self.metadata.role,
+            system_prompt=self.system_prompt,
+            persona_prompt_template=self.persona_prompt_template,
+            persona_profile=self.persona_profile,
+            task_prompt_template=self.task_prompt_template,
+            protocol_prompt_template=self.protocol_prompt_template,
+            protocol_context=self.protocol_context,
+            communication_limits=self.communication_limits,
+            action_space_prompt_template=self.action_space_prompt_template,
+            allowed_actions=self.allowed_actions,
+            decide_reveal=self.decide_reveal,
+            prompt=prompt,
+            construct=construct,
+            use_full_prompt=use_full_prompt,
         )
 
-    def _call_azure_openai(self, prompt: str) -> str:
+    def _call_azure_openai(self, messages: list[dict[str, str]]) -> str:
         endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
         if not endpoint:
             raise ValueError("AZURE_OPENAI_ENDPOINT is required.")
@@ -325,13 +300,14 @@ class AzureOpenAIAgent:
             f"?api-version={api_version}"
         )
         chat_payload: dict[str, Any] = {
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
+            "messages": messages,
         }
-        if self.metadata.temperature is not None:
+        skip_sampling = _azure_skip_sampling_params(deployment_name) or _azure_skip_sampling_params(
+            self.metadata.model_name
+        )
+        if self.metadata.temperature is not None and not skip_sampling:
             chat_payload["temperature"] = self.metadata.temperature
-        if self.metadata.top_p is not None:
+        if self.metadata.top_p is not None and not skip_sampling:
             chat_payload["top_p"] = self.metadata.top_p
         if self.metadata.max_tokens is not None:
             chat_payload["max_tokens"] = self.metadata.max_tokens
@@ -358,11 +334,11 @@ class AzureOpenAIAgent:
         responses_url = f"{endpoint.rstrip('/')}/openai/v1/responses"
         responses_payload: dict[str, Any] = {
             "model": deployment_name,
-            "input": prompt,
+            "input": flatten_messages_for_responses_input(messages),
         }
-        if self.metadata.temperature is not None:
+        if self.metadata.temperature is not None and not skip_sampling:
             responses_payload["temperature"] = self.metadata.temperature
-        if self.metadata.top_p is not None:
+        if self.metadata.top_p is not None and not skip_sampling:
             responses_payload["top_p"] = self.metadata.top_p
         if self.metadata.max_tokens is not None:
             # v1 Responses uses max_output_tokens.
@@ -376,9 +352,76 @@ class AzureOpenAIAgent:
             },
             method="POST",
         )
-        responses_body = _http_post_with_ssl_retry(responses_request, timeout=60)
+        try:
+            responses_body = _http_post_with_ssl_retry(responses_request, timeout=60)
+        except RuntimeError as exc:
+            err_text = str(exc)
+            # Always retry without sampling params when the API rejects temperature, even if
+            # heuristics thought sampling was safe (opaque deployment names vs logical model.name).
+            if not _azure_error_is_unsupported_temperature(err_text):
+                raise
+            retry_payload: dict[str, Any] = {
+                "model": deployment_name,
+                "input": flatten_messages_for_responses_input(messages),
+            }
+            if self.metadata.max_tokens is not None:
+                retry_payload["max_output_tokens"] = self.metadata.max_tokens
+            retry_request = urllib.request.Request(
+                responses_url,
+                data=json.dumps(retry_payload).encode("utf-8"),
+                headers={
+                    "api-key": api_key,
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            responses_body = _http_post_with_ssl_retry(retry_request, timeout=60)
         responses_payload_json = json.loads(responses_body)
         return _extract_responses_v1_text(responses_payload_json)
+
+
+def _azure_skip_sampling_params(deployment_name: str) -> bool:
+    """Whether to omit temperature/top_p for this deployment.
+
+    Many GPT-5 / Codex / o-series Azure deployments return 400 if ``temperature`` is sent
+    on the Responses API. Override with env ``AZURE_OPENAI_SKIP_SAMPLING_PARAMS``:
+    ``1``/``true`` to always skip, ``0``/``false`` to never skip (use heuristics only when unset).
+    """
+
+    raw = os.environ.get("AZURE_OPENAI_SKIP_SAMPLING_PARAMS")
+    if raw is not None and raw.strip() != "":
+        low = raw.strip().lower()
+        if low in ("1", "true", "yes"):
+            return True
+        if low in ("0", "false", "no"):
+            return False
+    dn = (deployment_name or "").lower()
+    return any(
+        key in dn
+        for key in (
+            "gpt-5",
+            "gpt5",
+            "codex",
+            "o1-preview",
+            "o1-mini",
+            "o1-pro",
+            "o3-mini",
+            "o3-pro",
+            "o3",
+            "reasoning",
+        )
+    )
+
+
+def _azure_error_is_unsupported_temperature(body_text: str) -> bool:
+    b = body_text.lower()
+    if "temperature" not in b:
+        return False
+    if "not supported" in b or "unsupported" in b:
+        return True
+    # JSON-style bodies sometimes omit the literal phrase "not supported".
+    return '"param"' in b and '"temperature"' in b
+
 
 def _azure_ssl_context() -> ssl.SSLContext:
     verify = os.environ.get("AZURE_OPENAI_SSL_VERIFY", "true").strip().lower()

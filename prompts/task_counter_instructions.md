@@ -8,7 +8,7 @@
 - Choose exactly one action each response.
 
 <VALID ACTION SPACES>
-- communicate
+- message
 - decide
 - do_nothing
 

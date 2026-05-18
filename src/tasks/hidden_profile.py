@@ -66,6 +66,7 @@ def hidden_profile_init_state(config: dict[str, Any]) -> dict[str, Any]:
                 "final_vote": None,
             }
     return {
+        "task_type": "hidden_profile",
         "target_steps": target_steps,
         "steps_taken": 0,
         "complete": False,

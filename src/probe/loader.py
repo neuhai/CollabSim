@@ -39,7 +39,7 @@ def load_probe_templates(path: str) -> ProbeRegistry:
         import yaml
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise ProbeTemplateError(
-            "PyYAML is required to load probe templates. Install with `pip install pyyaml`."
+            "PyYAML is required to load probe templates. Install dependencies with `uv sync`."
         ) from exc
 
     try:

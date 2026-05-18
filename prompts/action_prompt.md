@@ -3,17 +3,18 @@ Choose one action from the allowed actions and output JSON only.
 
 Allowed actions: {allowed_actions}
 
-Observation:
-{observation_json}
+Status update:
+{status_update}
 
-Return JSON with the following shape:
+<Response Format>
+Return JSON with the following format:
 {{
   "action": {{"type": "<one_of_allowed_actions>", "payload": {{...}}}},
   "rationale": "optional short rationale"
 }}
 
 Action payload references:
-- communicate: {{"channel":"broadcast|direct","content":"...","content_type":"text","recipients":["B"] (required for direct)}}
+- message: {{"channel":"broadcast|direct","content":"...","content_type":"text","recipients":["B"] (required for direct)}}
 - decide: {{"decision_id":"plan_selection","choice":"...","reveal":"{decide_reveal}"}}
 - produce_shape: {{"shape":"<choose_from_task_state>","quantity":1}}
 - propose_trade_offer: {{"offer_type":"buy|sell","shape":"<shape_from_task_state>","price_per_unit":20,"target_id":"B","quantity":1}}

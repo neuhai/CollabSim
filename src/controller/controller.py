@@ -32,6 +32,7 @@ from src.probe.probe import ProbeResponse
 from src.probe.registry import ProbeRegistry, ProbeValidationError
 from src.tasks import NOOP_TASK
 from src.tasks.daytrader import daytrader_settle_group_pool, daytrader_award_round_bonus, daytrader_snapshot_round_start_money
+from src.tasks.maptask_drawing_accuracy import compute_drawing_accuracy_snapshot
 from src.tasks.registry import TaskRegistry
 from src.utils.env import load_text_file
 
@@ -730,7 +731,7 @@ class ExperimentController:
                 if isinstance(production_time, (int, float)) and production_time >= 0:
                     return int(production_time * 1000)
         defaults = {
-            "communicate": 120,
+            "message": 120,
             "produce_shape": 2000,
             "propose_trade_offer": 200,
             "trade_response": 150,
@@ -901,6 +902,7 @@ class ExperimentController:
                     _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
                     _ps = getattr(proposal, "prompt_static", None) or (proposal.get("prompt_static") if isinstance(proposal, dict) else None)
                     _pu = getattr(proposal, "prompt_update", None) or (proposal.get("prompt_update") if isinstance(proposal, dict) else None)
+                    _pt = getattr(proposal, "prompt_text", None) or (proposal.get("prompt_text") if isinstance(proposal, dict) else None)
                     _first_time = agent_id not in self._trace_seen_agents
                     self._trace_seen_agents.add(agent_id)
                     _input: dict[str, Any] = {"static": _ps.splitlines(), "update": _pu} if _first_time and isinstance(_ps, str) else {"update": _pu}
@@ -909,6 +911,7 @@ class ExperimentController:
                         "agent_id": agent_id,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "input": _input,
+                        "prompt_text": _pt if isinstance(_pt, str) else None,
                         "output": {"raw": _rr, "action": _action, "rationale": _rationale},
                     })
                 return agent_id, proposal
@@ -948,6 +951,7 @@ class ExperimentController:
             _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
             _ps = getattr(proposal, "prompt_static", None) or (proposal.get("prompt_static") if isinstance(proposal, dict) else None)
             _pu = getattr(proposal, "prompt_update", None) or (proposal.get("prompt_update") if isinstance(proposal, dict) else None)
+            _pt = getattr(proposal, "prompt_text", None) or (proposal.get("prompt_text") if isinstance(proposal, dict) else None)
             _first_time = agent_id not in self._trace_seen_agents
             self._trace_seen_agents.add(agent_id)
             _input: dict[str, Any] = {"static": _ps.splitlines(), "update": _pu} if _first_time and isinstance(_ps, str) else {"update": _pu}
@@ -956,6 +960,7 @@ class ExperimentController:
                 "agent_id": agent_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "input": _input,
+                "prompt_text": _pt if isinstance(_pt, str) else None,
                 "output": {
                     "raw": _rr,
                     "action": _action,
@@ -1095,18 +1100,6 @@ class ExperimentController:
         had_action, had_non_noop_action = self._process_actions()
         if self.task_hook is not None:
             self.task_hook(self.state)
-        state_hash = compute_state_hash(self.state)
-        self._emit_event(
-            event_type="state_updated",
-            actor_id="system",
-            visibility="system",
-            payload={
-                "step_index": self.state.step_index,
-                "state_delta": {"step_index": self.state.step_index},
-                "resulting_state_hash": state_hash,
-            },
-            event_id=f"step_{self.state.step_index}",
-        )
         self._maybe_log_probe(had_action)
         self._schedule_context_updates()
         self._process_context_updates()
@@ -1119,6 +1112,18 @@ class ExperimentController:
         if late_had_non_noop:
             had_non_noop_action = True
         self._flush_logs()
+        state_hash = compute_state_hash(self.state)
+        self._emit_event(
+            event_type="state_updated",
+            actor_id="system",
+            visibility="system",
+            payload={
+                "step_index": self.state.step_index,
+                "state_delta": {"step_index": self.state.step_index},
+                "resulting_state_hash": state_hash,
+            },
+            event_id=f"step_{self.state.step_index}",
+        )
 
     def _apply_proposal_expiry(self) -> None:
         proposals = self.state.buffers.get("proposals")
@@ -1440,6 +1445,7 @@ class ExperimentController:
             _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
             _ps = getattr(proposal, "prompt_static", None) or (proposal.get("prompt_static") if isinstance(proposal, dict) else None)
             _pu = getattr(proposal, "prompt_update", None) or (proposal.get("prompt_update") if isinstance(proposal, dict) else None)
+            _pt = getattr(proposal, "prompt_text", None) or (proposal.get("prompt_text") if isinstance(proposal, dict) else None)
             _first_time = agent_id not in self._trace_seen_agents
             self._trace_seen_agents.add(agent_id)
             _input: dict[str, Any] = {"static": _ps.splitlines(), "update": _pu} if _first_time and isinstance(_ps, str) else {"update": _pu}
@@ -1448,6 +1454,7 @@ class ExperimentController:
                 "agent_id": agent_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "input": _input,
+                "prompt_text": _pt if isinstance(_pt, str) else None,
                 "output": {"raw": _rr, "action": _action, "rationale": _rationale},
             })
         self._capture_agent_memory(agent_id, agent)
@@ -1782,7 +1789,7 @@ class ExperimentController:
             return None
         relevant: set[str] = set()
         trigger_action_types = {
-            "communicate",
+            "message",
             "propose_trade_offer",
             "trade_response",
             "cancel_trade_offer",
@@ -1813,7 +1820,7 @@ class ExperimentController:
             action_payload = action.get("payload")
             if not isinstance(action_payload, dict):
                 continue
-            if action_type == "communicate":
+            if action_type == "message":
                 recipients = action_payload.get("recipients")
                 if isinstance(recipients, list):
                     for value in recipients:
@@ -1854,7 +1861,7 @@ class ExperimentController:
             if not isinstance(action_payload, dict):
                 continue
             recipients: set[str] = set()
-            if action_type == "communicate":
+            if action_type == "message":
                 raw = action_payload.get("recipients")
                 if isinstance(raw, list):
                     recipients.update(
@@ -2065,17 +2072,21 @@ class ExperimentController:
         )
         if self.run_paths is not None:
             from datetime import datetime, timezone
-            _pt = getattr(proposal, "prompt_text", None) or (proposal.get("prompt_text") if isinstance(proposal, dict) else None)
             _rr = getattr(proposal, "raw_response", None) or (proposal.get("raw_response") if isinstance(proposal, dict) else None)
             _action = getattr(proposal, "action", None) or (proposal.get("action") if isinstance(proposal, dict) else None)
             _rationale = getattr(proposal, "rationale", None) or (proposal.get("rationale") if isinstance(proposal, dict) else None)
+            _ps = getattr(proposal, "prompt_static", None) or (proposal.get("prompt_static") if isinstance(proposal, dict) else None)
+            _pu = getattr(proposal, "prompt_update", None) or (proposal.get("prompt_update") if isinstance(proposal, dict) else None)
+            _pt = getattr(proposal, "prompt_text", None) or (proposal.get("prompt_text") if isinstance(proposal, dict) else None)
             _first_time = agent_id not in self._trace_seen_agents
             self._trace_seen_agents.add(agent_id)
+            _input: dict[str, Any] = {"static": _ps.splitlines(), "update": _pu} if _first_time and isinstance(_ps, str) else {"update": _pu}
             append_trace(self.run_paths.trace_path, {
                 "step_index": self.state.step_index,
                 "agent_id": agent_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "input": {"prompt": (_pt.splitlines() if isinstance(_pt, str) else _pt) if _first_time else None},
+                "input": _input,
+                "prompt_text": _pt if isinstance(_pt, str) else None,
                 "output": {"raw": _rr, "action": _action, "rationale": _rationale},
             })
         self._set_agent_status(agent_id, "idle")
@@ -2206,24 +2217,40 @@ class ExperimentController:
             if not isinstance(actor_id, str) or not actor_id:
                 continue
             validated_actions.append((actor_id, processed))
+            validated_idx = len(self.state.event_log) - 1
             before_events = len(self.state.event_log)
             self._apply_action(processed, actor_id)
             was_rejected = self._has_new_update_map_rejection(actor_id, start_index=before_events)
             if was_rejected:
                 rejected_actors.add(actor_id)
-            elif processed.get("type") == "update_map_progress" and self.run_paths is not None:
-                from datetime import datetime, timezone
-                participants = self.state.task_state.get("participants", {})
-                follower_data = participants.get(actor_id, {})
-                map_text = follower_data.get("map_working_text")
-                if isinstance(map_text, str):
-                    append_trace(self.run_paths.trace_path, {
-                        "type": "map_snapshot",
-                        "step_index": self.state.step_index,
-                        "agent_id": actor_id,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "map": [""] + map_text.splitlines(),
-                    })
+            else:
+                action_type = processed.get("type")
+                if action_type in ("update_map_progress", "draw", "erase", "undo", "reset"):
+                    acc = compute_drawing_accuracy_snapshot(self.state.task_state)
+                    if acc is not None and 0 <= validated_idx < len(self.state.event_log):
+                        ev = self.state.event_log[validated_idx]
+                        if isinstance(ev, dict) and ev.get("event_type") == "action_validated":
+                            payload = ev.setdefault("payload", {})
+                            if isinstance(payload, dict):
+                                payload["drawing_accuracy"] = acc
+                    self._invalidate_maptask_guider_observations()
+                if (
+                    isinstance(action_type, str)
+                    and action_type in ("update_map_progress", "draw", "erase", "undo", "reset")
+                    and self.run_paths is not None
+                ):
+                    participants = self.state.task_state.get("participants", {})
+                    follower_data = participants.get(actor_id, {})
+                    map_text = follower_data.get("map_working_text")
+                    if isinstance(map_text, str):
+                        append_trace(self.run_paths.trace_path, {
+                            "type": "map_snapshot",
+                            "step_index": self.state.step_index,
+                            "agent_id": actor_id,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "prompt_text": None,
+                            "map": [""] + map_text.splitlines(),
+                        })
         had_non_noop = any(action.get("type") != "do_nothing" for _, action in validated_actions)
         return bool(validated_actions), had_non_noop, validated_actions, rejected_actors
 
@@ -2241,9 +2268,25 @@ class ExperimentController:
             if not isinstance(payload, dict):
                 continue
             action = payload.get("action")
-            if isinstance(action, dict) and action.get("type") == "update_map_progress":
+            if isinstance(action, dict) and action.get("type") in (
+                "update_map_progress",
+                "draw",
+                "erase",
+                "undo",
+                "reset",
+            ):
                 return True
         return False
+
+    def _invalidate_maptask_guider_observations(self) -> None:
+        participants = self.state.task_state.get("participants")
+        if not isinstance(participants, dict):
+            return
+        for aid, row in participants.items():
+            if not isinstance(aid, str) or not isinstance(row, dict):
+                continue
+            if row.get("role") == "guider":
+                self.state.observation_cache.pop(aid, None)
 
     def _is_maptask_follower(self, agent_id: str) -> bool:
         participants = self.state.task_state.get("participants")
@@ -2294,6 +2337,7 @@ class ExperimentController:
                 continue
             for key in strip_keys:
                 pdata.pop(key, None)
+        redacted.pop("maptask_follower_live_canvas", None)
         return redacted
 
     def _maptask_public_event_visible_to_agent(self, event: dict[str, Any], agent_id: str) -> bool:
@@ -2448,15 +2492,52 @@ class ExperimentController:
         if isinstance(entry, dict) and agent_id not in self.state.visibility_map:
             self.state.visibility_map[agent_id] = entry
 
+    def _build_game_status_for_agent(self, agent_id: str) -> dict[str, Any]:
+        """Runtime fields for prompts: steps, time limits, termination (not sensitive)."""
+
+        _ = agent_id
+        out: dict[str, Any] = {
+            "session_status": "running",
+            "step_index": self.state.step_index,
+            "sim_time_sec": round(self.state.sim_time_ms / 1000.0, 3),
+        }
+        if not isinstance(self.config, dict):
+            return out
+        experiment = self.config.get("experiment", {})
+        protocol = self.config.get("protocol", {})
+        if isinstance(experiment, dict):
+            ms = experiment.get("max_steps")
+            if isinstance(ms, int) and ms > 0:
+                out["max_steps"] = ms
+                out["remaining_steps"] = max(0, ms - self.state.step_index)
+        if isinstance(protocol, dict):
+            out["step_mode"] = protocol.get("step_mode")
+            term = protocol.get("termination")
+            if isinstance(term, dict) and term.get("condition") is not None:
+                out["termination_condition"] = term.get("condition")
+        if self._wall_start_monotonic is not None and self._wall_duration_sec is not None:
+            elapsed = max(0.0, time.monotonic() - self._wall_start_monotonic)
+            remaining = max(0.0, float(self._wall_duration_sec) - elapsed)
+            out["wall_elapsed_sec"] = round(elapsed, 3)
+            out["wall_remaining_sec"] = round(remaining, 3)
+            out["wall_duration_sec"] = float(self._wall_duration_sec)
+        else:
+            dur = self._duration_seconds()
+            if isinstance(dur, (int, float)) and float(dur) > 0:
+                out["duration_limit_sec"] = round(float(dur), 3)
+        return out
+
     def _build_observation_for_agent(self, agent_id: str) -> Observation:
         snapshot = build_state_snapshot(self.state)
         visible_state = self._filter_state_for_agent(snapshot, agent_id)
         visible_events = self._filter_visible_events_for_agent(agent_id)
+        game_status = self._build_game_status_for_agent(agent_id)
         return Observation(
             state=visible_state,
             visible_events=visible_events,
             step_index=self.state.step_index,
             memory=self._context_memory_for_agent(agent_id),
+            game_status=game_status,
         )
 
     def _context_memory_for_agent(self, agent_id: str) -> dict[str, Any] | None:
@@ -2555,12 +2636,22 @@ class ExperimentController:
         if not isinstance(participants, dict):
             return task_state
         peer_public = {"specialty"}
+        show_full_peer = False
+        if isinstance(self.config, dict):
+            task_cfg = self.config.get("task", {})
+            if isinstance(task_cfg, dict) and task_cfg.get("peer_economic_dashboard") is True:
+                show_full_peer = True
         redacted: dict[str, Any] = {}
         for pid, row in participants.items():
             if not isinstance(pid, str) or not isinstance(row, dict):
                 continue
             if pid == viewer_id:
                 redacted[pid] = copy.deepcopy(row)
+            elif show_full_peer:
+                row_copy = copy.deepcopy(row)
+                row_copy.pop("tasks", None)
+                row_copy.pop("in_production", None)
+                redacted[pid] = row_copy
             else:
                 redacted[pid] = {
                     key: copy.deepcopy(value) for key, value in row.items() if key in peer_public
@@ -2895,13 +2986,14 @@ class ExperimentController:
     def _apply_action(self, action: dict[str, Any], actor_id: str) -> None:
         self._queue_targeted_realtime_triggers(action, actor_id)
         if self._apply_task_action(action, actor_id):
+            self._touch_non_message_cadence(actor_id, action)
             return
         action_type = action.get("type")
         payload = action.get("payload", {})
         if action_type == "decide" and isinstance(payload, dict):
             self._apply_decision_action(actor_id, payload)
-        if action_type == "communicate" and isinstance(payload, dict):
-            self._apply_communicate_action(actor_id, payload)
+        if action_type == "message" and isinstance(payload, dict):
+            self._apply_message_action(actor_id, payload)
         if action_type == "propose" and isinstance(payload, dict):
             self._apply_propose_action(actor_id, payload)
         if action_type == "respond" and isinstance(payload, dict):
@@ -2909,7 +3001,9 @@ class ExperimentController:
         if action_type == "transfer" and isinstance(payload, dict):
             self._apply_transfer_action(actor_id, payload)
         if action_type == "do_nothing":
+            self._touch_non_message_cadence(actor_id, action)
             return
+        self._touch_non_message_cadence(actor_id, action)
 
     def _ensure_hidden_profile_completion(self) -> None:
         if self._task_type() != "hidden_profile":
@@ -2935,8 +3029,8 @@ class ExperimentController:
         payload = action.get("payload")
         if not isinstance(payload, dict):
             return
-        if action_type == "communicate":
-            # communicate already has dedicated trigger handling in _apply_communicate_action.
+        if action_type == "message":
+            # message already has dedicated trigger handling in _apply_message_action.
             return
         triggerable = {
             "propose_trade_offer",
@@ -3065,7 +3159,7 @@ class ExperimentController:
             payload={"decision_id": decision_id, "choices": choices},
         )
 
-    def _apply_communicate_action(self, actor_id: str, payload: dict[str, Any]) -> None:
+    def _apply_message_action(self, actor_id: str, payload: dict[str, Any]) -> None:
         channel = payload.get("channel")
         recipients = self._resolve_recipients(channel, payload, actor_id)
         message_id = self._next_message_id()
@@ -3083,6 +3177,7 @@ class ExperimentController:
             },
         )
         self._increment_message_count(actor_id)
+        self._record_message_delivery(actor_id)
         daytrader_phase_lock: str | None = None
         if self._task_type() == "daytrader" and self._daytrader_phase() == "group_chat":
             # Keep message-triggered free chat within free-chat constraints,
@@ -3264,9 +3359,9 @@ class ExperimentController:
                 if "decide" not in allowed_actions:
                     allowed_actions.insert(0, "decide")
             elif phase == "discussion":
-                allowed_actions = [item for item in allowed_actions if item in {"communicate", "do_nothing"}]
-                if "communicate" not in allowed_actions:
-                    allowed_actions.insert(0, "communicate")
+                allowed_actions = [item for item in allowed_actions if item in {"message", "do_nothing"}]
+                if "message" not in allowed_actions:
+                    allowed_actions.insert(0, "message")
         persona_profile = None
         agent = self.state.agents.get(agent_id) if isinstance(self.state.agents, dict) else None
         if agent is not None:
@@ -3304,7 +3399,7 @@ class ExperimentController:
             if default_reveal is None:
                 return action
             return {**action, "payload": {**payload, "reveal": default_reveal}}
-        if action_type == "communicate":
+        if action_type == "message":
             channel = payload.get("channel")
             if channel != "broadcast":
                 return action
@@ -3342,7 +3437,7 @@ class ExperimentController:
         hidden_profile_error = self._check_hidden_profile_phase_preconditions(action, actor_id)
         if hidden_profile_error is not None:
             return hidden_profile_error
-        if action_type != "communicate" or not isinstance(payload, dict):
+        if action_type != "message" or not isinstance(payload, dict):
             return None
         mode = self._communication_mode()
         channel = payload.get("channel")
@@ -3353,11 +3448,11 @@ class ExperimentController:
             if not isinstance(recipients, list) or not recipients:
                 return "Direct communication requires a non-empty recipients list."
             if not all(isinstance(item, str) and item for item in recipients):
-                return "communicate.recipients must contain non-empty participant ids."
+                return "message.recipients must contain non-empty participant ids."
             if actor_id in recipients:
                 return "You cannot send a direct message to yourself."
             if len(set(recipients)) != len(recipients):
-                return "communicate.recipients must not contain duplicates."
+                return "message.recipients must not contain duplicates."
         if channel == "broadcast":
             recipients = payload.get("recipients")
             if recipients is not None:
@@ -3369,6 +3464,15 @@ class ExperimentController:
                     return "broadcast recipients must not include yourself."
                 if len(set(recipients)) != len(recipients):
                     return "broadcast recipients must not contain duplicates."
+        word_err = self._check_message_word_limit(payload)
+        if word_err is not None:
+            return word_err
+        interval_err = self._check_message_sim_interval(actor_id)
+        if interval_err is not None:
+            return interval_err
+        actions_err = self._check_message_min_actions_since(actor_id)
+        if actions_err is not None:
+            return actions_err
         if self._step_mode() != "time":
             limit = self._max_messages_per_turn()
             if limit is not None and self._message_count(actor_id) >= limit:
@@ -3386,7 +3490,7 @@ class ExperimentController:
                 return None
             allowed_text = ", ".join(sorted(allowed))
             return f"DayTrader decision phase only allows: {allowed_text}."
-        allowed = {"communicate", "do_nothing"}
+        allowed = {"message", "do_nothing"}
         if action_type not in allowed:
             allowed_text = ", ".join(sorted(allowed))
             return f"DayTrader group_chat phase only allows: {allowed_text}."
@@ -3614,17 +3718,17 @@ class ExperimentController:
         if not isinstance(final_decision_id, str) or not final_decision_id:
             final_decision_id = "final_vote"
         discussion_actions_raw = phase_rules.get("discussion_action_types")
-        discussion_actions: set[str] = {"communicate"}
+        discussion_actions: set[str] = {"message"}
         if isinstance(discussion_actions_raw, list):
             configured = {item for item in discussion_actions_raw if isinstance(item, str) and item}
             if configured:
                 discussion_actions = configured
 
-        if action_type == "communicate":
+        if action_type == "message":
             if phase != "discussion":
                 return "Communication is only allowed during hidden_profile discussion phase."
-            if "communicate" not in discussion_actions:
-                return "Communication is disabled by hidden_profile phase_rules.discussion_action_types."
+            if "message" not in discussion_actions:
+                return "Messaging is disabled by hidden_profile phase_rules.discussion_action_types."
             return None
 
         if action_type == "do_nothing":
@@ -3782,6 +3886,107 @@ class ExperimentController:
         if isinstance(limit, int) and limit > 0:
             return limit
         return None
+
+    def _communication_control_config(self) -> dict[str, Any]:
+        if not isinstance(self.config, dict):
+            return {}
+        controls = self.config.get("controls", {})
+        if not isinstance(controls, dict):
+            return {}
+        communication = controls.get("communication", {})
+        return communication if isinstance(communication, dict) else {}
+
+    def _communication_controls_state(self) -> dict[str, Any]:
+        store = self.state.buffers.setdefault("_communication_controls", {})
+        if not isinstance(store, dict):
+            store = {}
+            self.state.buffers["_communication_controls"] = store
+        actions_since = store.setdefault("actions_since_comm", {})
+        last_sim = store.setdefault("last_comm_sim_ms", {})
+        if not isinstance(actions_since, dict):
+            actions_since = {}
+            store["actions_since_comm"] = actions_since
+        if not isinstance(last_sim, dict):
+            last_sim = {}
+            store["last_comm_sim_ms"] = last_sim
+        return store
+
+    def _check_message_word_limit(self, payload: dict[str, Any]) -> str | None:
+        comm = self._communication_control_config()
+        max_words = comm.get("max_message_words")
+        if not isinstance(max_words, int) or max_words <= 0:
+            return None
+        if payload.get("content_type") != "text":
+            return None
+        content = payload.get("content")
+        if not isinstance(content, str):
+            return "message.content must be a string for text messages."
+        words = [w for w in content.strip().split() if w]
+        if len(words) > max_words:
+            return f"Message exceeds max length ({max_words} words)."
+        return None
+
+    def _check_message_sim_interval(self, actor_id: str) -> str | None:
+        comm = self._communication_control_config()
+        raw = comm.get("min_sim_interval_between_communicate_sec")
+        if not isinstance(raw, (int, float)) or float(raw) <= 0:
+            return None
+        interval_ms = int(float(raw) * 1000)
+        last_map = self._communication_controls_state().get("last_comm_sim_ms", {})
+        if not isinstance(last_map, dict):
+            return None
+        last = last_map.get(actor_id)
+        if not isinstance(last, int):
+            return None
+        now = int(self.state.sim_time_ms)
+        if now - last < interval_ms:
+            return "Communication rate limited by simulated time interval."
+        return None
+
+    def _check_message_min_actions_since(self, actor_id: str) -> str | None:
+        comm = self._communication_control_config()
+        min_actions = comm.get("min_agent_actions_between_communicate")
+        if not isinstance(min_actions, int) or min_actions <= 0:
+            return None
+        actions_map = self._communication_controls_state().get("actions_since_comm", {})
+        if not isinstance(actions_map, dict):
+            return None
+        if actor_id not in actions_map:
+            return None
+        since = actions_map.get(actor_id, 0)
+        if not isinstance(since, int):
+            return None
+        if since < min_actions:
+            return "Communication limit: not enough actions since the last message."
+        return None
+
+    def _record_message_delivery(self, actor_id: str) -> None:
+        state = self._communication_controls_state()
+        last_map = state.setdefault("last_comm_sim_ms", {})
+        actions_map = state.setdefault("actions_since_comm", {})
+        if isinstance(last_map, dict):
+            last_map[actor_id] = int(self.state.sim_time_ms)
+        if isinstance(actions_map, dict):
+            actions_map[actor_id] = 0
+
+    def _touch_non_message_cadence(self, actor_id: str, action: dict[str, Any]) -> None:
+        if not isinstance(action, dict):
+            return
+        if action.get("type") == "message":
+            return
+        self._bump_actions_since_last_message(actor_id)
+
+    def _bump_actions_since_last_message(self, actor_id: str) -> None:
+        comm = self._communication_control_config()
+        min_actions = comm.get("min_agent_actions_between_communicate")
+        if not isinstance(min_actions, int) or min_actions <= 0:
+            return
+        actions_map = self._communication_controls_state().setdefault("actions_since_comm", {})
+        if not isinstance(actions_map, dict):
+            return
+        if actor_id not in actions_map:
+            return
+        actions_map[actor_id] = int(actions_map.get(actor_id, 0)) + 1
 
     def _message_count(self, actor_id: str) -> int:
         counts = self.state.turn_state.get("message_counts")
@@ -4204,9 +4409,22 @@ class ExperimentController:
                         if point is not None:
                             follower_points.add(point)
 
+        ts = self.state.task_state if isinstance(self.state.task_state, dict) else {}
+        ref_cells = ts.get("reference_route_cells")
+        if isinstance(ref_cells, list) and ref_cells:
+            gt_points: set[tuple[int, int]] = set()
+            for item in ref_cells:
+                pt = self._coerce_cell_point(item)
+                if pt is not None:
+                    gt_points.add(pt)
+            gt_points = gt_points.union(anchor_points)
+        elif guider_map_text is not None:
+            gt_points = self._extract_route_points_from_text(guider_map_text).union(anchor_points)
+        else:
+            return None
+
         if guider_map_text is None:
             return None
-        gt_points = self._extract_route_points_from_text(guider_map_text).union(anchor_points)
         if not gt_points:
             return None
 
@@ -4232,7 +4450,7 @@ class ExperimentController:
         points: set[tuple[int, int]] = set()
         for row_idx, line in enumerate(map_text.splitlines()):
             for col_idx, cell in enumerate(line):
-                if cell == ".":
+                if cell in {".", "*"}:
                     points.add((row_idx, col_idx))
         return points
 

@@ -1,0 +1,55 @@
+experiment:
+  id: "study_dt_baseline"
+  seed: 116
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_daytrader_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format_daytrader.md"
+  action: "prompts/action_prompt.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - {id: "A", role: "investor", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
+  - {id: "B", role: "investor", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
+  - {id: "C", role: "investor", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
+
+action_space:
+  enabled: ["message", "make_individual_investment", "make_group_investment", "do_nothing"]
+
+controls:
+  communication:
+    mode: "broadcast"
+
+task:
+  type: "daytrader"
+  target_rounds: 5
+  starting_money: 200
+  min_trade_price: 15
+  max_trade_price: 100
+  incentive_money: 60
+  phase_rules:
+    group_chat_max_turns: 12
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "time"
+  agent_trigger_interval_sec: 25
+  termination:
+    condition: "task_complete"
+  max_concurrent_requests: 3
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_action"
+  templates: ["grounding_v1", "coordination_v1"]
+  questions_path: "prompts/interview_questions_shape_factory_daytrader.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/study_conditions/daytrader/baseline"
+  observation_events: true

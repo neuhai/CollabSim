@@ -21,6 +21,13 @@ from typing import Any
 import httpx
 
 from src.agents.interface import ActionProposal, AgentMetadata, Observation
+from src.agents.action_prompt_compose import compose_action_prompt, compose_probe_prompt
+from src.agents.llm_conversation import (
+    build_messages_for_request,
+    clear_llm_chat_thread,
+    commit_llm_turn,
+    init_llm_chat_thread,
+)
 from typing import ClassVar
 from src.probe.probe import ProbeResponse
 from src.utils.env import load_env_file
@@ -50,18 +57,30 @@ class SGLangAgent:
     persona_profile: str | None = None
     protocol_context: dict[str, Any] | None = None
     decide_reveal: str | None = None
+    communication_limits: str = ""
+    sglang_host: str | None = None
+    sglang_port: int | None = None
 
     def __post_init__(self) -> None:
         load_env_file()
-        self._host = os.environ.get("SGLANG_HOST", "localhost")
-        self._port = int(os.environ.get("SGLANG_PORT", "30000"))
+        env_host = os.environ.get("SGLANG_HOST", "localhost")
+        env_port_raw = os.environ.get("SGLANG_PORT", "30000")
+        self._host = self.sglang_host.strip() if isinstance(self.sglang_host, str) and self.sglang_host.strip() else env_host
+        if self.sglang_port is not None:
+            self._port = int(self.sglang_port)
+        else:
+            try:
+                self._port = int(env_port_raw)
+            except ValueError:
+                self._port = 30000
         raw = os.environ.get("SGLANG_HTTP_RETRIES", "6")
         try:
             self._max_retries = max(1, min(int(raw), 20))
         except ValueError:
             self._max_retries = 6
-
-    @property
+        self._llm_action_invocation = 0
+        self._llm_probe_invocation = 0
+        init_llm_chat_thread(self)
     def _base_url(self) -> str:
         return f"http://{self._host}:{self._port}"
 
@@ -71,6 +90,9 @@ class SGLangAgent:
 
     def reset(self, seed: int | None = None) -> None:
         _ = seed
+        self._llm_action_invocation = 0
+        self._llm_probe_invocation = 0
+        clear_llm_chat_thread(self)
 
     def serialize(self) -> dict[str, Any]:
         return {}
@@ -98,8 +120,13 @@ class SGLangAgent:
     # ------------------------------------------------------------------
 
     async def context_update_async(self, observation: Observation) -> ActionProposal:
-        prompt, prompt_static, prompt_update = self._build_action_prompt(observation)
-        text = await self._call_sglang_async(prompt)
+        inv = self._llm_action_invocation
+        use_full = inv == 0
+        prompt, prompt_static, prompt_update = self._build_action_prompt(observation, use_full_prompt=use_full)
+        messages = build_messages_for_request(self, prompt)
+        text = await self._call_sglang_async(messages)
+        commit_llm_turn(self, prompt, text)
+        self._llm_action_invocation = inv + 1
         parsed = _parse_json(text)
         if not parsed:
             action = self._fallback_action("parse_failure")
@@ -162,8 +189,13 @@ class SGLangAgent:
         construct: str | None,
         observation: Observation,
     ) -> ProbeResponse:
-        query = self._build_probe_prompt(prompt, construct, observation)
-        text = await self._call_sglang_async(query)
+        pinv = self._llm_probe_invocation
+        use_full = pinv == 0
+        query = self._build_probe_prompt(prompt, construct, observation, use_full_prompt=use_full)
+        messages = build_messages_for_request(self, query)
+        text = await self._call_sglang_async(messages)
+        commit_llm_turn(self, query, text)
+        self._llm_probe_invocation = pinv + 1
         parsed = _parse_json(text)
         answer = parsed.get("answer") if isinstance(parsed, dict) else text.strip()
         confidence = parsed.get("confidence") if isinstance(parsed, dict) else None
@@ -179,11 +211,11 @@ class SGLangAgent:
     # HTTP
     # ------------------------------------------------------------------
 
-    async def _call_sglang_async(self, prompt: str) -> str:
+    async def _call_sglang_async(self, messages: list[dict[str, str]]) -> str:
         url = f"{self._base_url}/v1/chat/completions"
         payload: dict[str, Any] = {
             "model": self.metadata.model_name,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
         }
         if self.metadata.temperature is not None:
             payload["temperature"] = self.metadata.temperature
@@ -222,101 +254,53 @@ class SGLangAgent:
     # Prompt building (mirrors AzureOpenAIAgent)
     # ------------------------------------------------------------------
 
-    def _build_action_prompt(self, observation: Observation) -> tuple[str, str, dict[str, Any]]:
-        allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
-        decide_reveal = self.decide_reveal or "aggregated"
-        observation_payload: dict[str, Any] = {
-            "agent_id": self.metadata.agent_id,
-            "state": observation.state,
-            "visible_events": observation.visible_events,
-            "memory": observation.memory,
-        }
-        observation_json = json.dumps(observation_payload, ensure_ascii=False)
-        persona_profile = self.persona_profile or "Default collaborative persona."
-        persona_prompt = _render_template(self.persona_prompt_template, {"persona_profile": persona_profile})
-        protocol_prompt = _render_template(
-            self.protocol_prompt_template,
-            {"protocol_json": json.dumps(self.protocol_context or {}, ensure_ascii=False)},
+    def _build_action_prompt(
+        self, observation: Observation, *, use_full_prompt: bool = True
+    ) -> tuple[str, str, dict[str, Any]]:
+        return compose_action_prompt(
+            observation,
+            agent_id=self.metadata.agent_id,
+            role=self.metadata.role,
+            system_prompt=self.system_prompt,
+            persona_prompt_template=self.persona_prompt_template,
+            persona_profile=self.persona_profile,
+            task_prompt_template=self.task_prompt_template,
+            protocol_prompt_template=self.protocol_prompt_template,
+            protocol_context=self.protocol_context,
+            communication_limits=self.communication_limits,
+            action_space_prompt_template=self.action_space_prompt_template,
+            return_format_prompt_template=self.return_format_prompt_template,
+            action_prompt_template=self.action_prompt_template,
+            allowed_actions=self.allowed_actions,
+            decide_reveal=self.decide_reveal,
+            use_full_prompt=use_full_prompt,
         )
-        action_space_prompt = _render_template(self.action_space_prompt_template, {"allowed_actions": allowed})
-        return_format_prompt = _render_template(self.return_format_prompt_template, {"decide_reveal": decide_reveal})
-        action_prompt = _render_template(
-            self.action_prompt_template,
-            {
-                "allowed_actions": allowed,
-                "observation_json": observation_json,
-                "decide_reveal": decide_reveal,
-            },
-        )
-        static_prefix = (
-            f"{self.system_prompt}\n\n"
-            f"Your participant id is: {self.metadata.agent_id}\n\n"
-            f"{persona_prompt}\n\n"
-            f"{self.task_prompt_template}\n\n"
-            f"{protocol_prompt}\n\n"
-            f"{action_space_prompt}\n\n"
-            f"{return_format_prompt}"
-        )
-        full_prompt = (
-            f"{self.system_prompt}\n\n"
-            f"Your participant id is: {self.metadata.agent_id}\n\n"
-            f"{persona_prompt}\n\n"
-            f"{self.task_prompt_template}\n\n"
-            f"{protocol_prompt}\n\n"
-            f"{action_space_prompt}\n\n"
-            f"Observation:\n{observation_json}\n\n"
-            f"{return_format_prompt}\n\n"
-            f"{action_prompt}"
-        )
-        return full_prompt, static_prefix, observation_payload
 
-    def _build_probe_prompt(self, prompt: str, construct: str | None, observation: Observation) -> str:
-        allowed = ", ".join(self.allowed_actions) if self.allowed_actions else "communicate, decide"
-        decide_reveal = self.decide_reveal or "aggregated"
-        observation_json = json.dumps(
-            {
-                "agent_id": self.metadata.agent_id,
-                "state": observation.state,
-                "visible_events": observation.visible_events,
-                "memory": observation.memory,
-            },
-            ensure_ascii=False,
-        )
-        persona_profile = self.persona_profile or "Default collaborative persona."
-        persona_prompt = _render_template(self.persona_prompt_template, {"persona_profile": persona_profile})
-        protocol_prompt = _render_template(
-            self.protocol_prompt_template,
-            {"protocol_json": json.dumps(self.protocol_context or {}, ensure_ascii=False)},
-        )
-        action_space_prompt = _render_template(self.action_space_prompt_template, {"allowed_actions": allowed})
-        probe_context = f"Construct: {construct}\n\n" if construct else ""
-        probe_prompt = (
-            "Instead of selecting an action, answer the probe items below.\n"
-            f"{probe_context}"
-            f"{prompt}\n\n"
-            "Return strict JSON only."
-        )
-        return (
-            f"{self.system_prompt}\n\n"
-            f"Your participant id is: {self.metadata.agent_id}\n\n"
-            f"{persona_prompt}\n\n"
-            f"{self.task_prompt_template}\n\n"
-            f"{protocol_prompt}\n\n"
-            f"{action_space_prompt}\n\n"
-            f"Observation:\n{observation_json}\n\n"
-            f"Action payload references:\n"
-            f"- communicate: {{\"channel\":\"broadcast|direct\",\"content\":\"...\",\"content_type\":\"text\",\"recipients\":[\"B\"] (required for direct)}}\n"
-            f"- decide: {{\"decision_id\":\"plan_selection\",\"choice\":\"...\",\"reveal\":\"{decide_reveal}\"}}\n"
-            f"- produce_shape: {{\"shape\":\"<choose_from_task_state>\",\"quantity\":1}}\n"
-            f"- propose_trade_offer: {{\"offer_type\":\"buy|sell\",\"shape\":\"<shape_from_task_state>\",\"price_per_unit\":20,\"target_id\":\"B\",\"quantity\":1}}\n"
-            f"- trade_response: {{\"transaction_id\":\"offer_2_1\",\"response_type\":\"accept|decline\"}}\n"
-            f"- cancel_trade_offer: {{\"transaction_id\":\"offer_2_1\"}}\n"
-            f"- fulfill_order: {{\"order_indices\":[0,1]}}\n"
-            f"- make_individual_investment: {{\"invest_price\":30}}\n"
-            f"- make_group_investment: {{\"invest_price\":30}}\n"
-            f"- update_map_progress: {{\"map_progress\":{{\"segment\":\"start_to_bridge\",\"status\":\"confirmed\"}}}}\n"
-            f"- do_nothing: {{\"reason\":\"...\"}}\n\n"
-            f"{probe_prompt}"
+    def _build_probe_prompt(
+        self,
+        prompt: str,
+        construct: str | None,
+        observation: Observation,
+        *,
+        use_full_prompt: bool = True,
+    ) -> str:
+        return compose_probe_prompt(
+            observation,
+            agent_id=self.metadata.agent_id,
+            role=self.metadata.role,
+            system_prompt=self.system_prompt,
+            persona_prompt_template=self.persona_prompt_template,
+            persona_profile=self.persona_profile,
+            task_prompt_template=self.task_prompt_template,
+            protocol_prompt_template=self.protocol_prompt_template,
+            protocol_context=self.protocol_context,
+            communication_limits=self.communication_limits,
+            action_space_prompt_template=self.action_space_prompt_template,
+            allowed_actions=self.allowed_actions,
+            decide_reveal=self.decide_reveal,
+            prompt=prompt,
+            construct=construct,
+            use_full_prompt=use_full_prompt,
         )
 
     # ------------------------------------------------------------------
@@ -332,9 +316,9 @@ class SGLangAgent:
                 "default": "fallback: default",
             }
             return {"type": "do_nothing", "payload": {"reason": reason_map.get(reason_code, "fallback: default")}}
-        if "communicate" in self.allowed_actions:
+        if "message" in self.allowed_actions:
             return {
-                "type": "communicate",
+                "type": "message",
                 "payload": {
                     "channel": "broadcast",
                     "content": "Unable to parse model output; defaulting to status update.",
@@ -353,15 +337,18 @@ class SGLangAgent:
         if not isinstance(action_type, str):
             action_type = None
 
+        if action_type == "communicate":
+            action_type = "message"
+
         if action_type is None:
             if "message" in payload or "content" in payload:
-                action_type = "communicate"
+                action_type = "message"
             elif "decision" in payload or "choice" in payload or "plan" in payload:
                 action_type = "decide"
             elif "do_nothing" in self.allowed_actions:
                 action_type = "do_nothing"
 
-        if action_type == "communicate":
+        if action_type == "message":
             content = payload.get("content")
             if not isinstance(content, str) or not content:
                 message = payload.get("message")
@@ -373,7 +360,7 @@ class SGLangAgent:
             if content_type not in ("text", "json"):
                 content_type = "text"
             normalized: dict[str, Any] = {
-                "type": "communicate",
+                "type": "message",
                 "payload": {"channel": channel, "content": content, "content_type": content_type},
             }
             recipients = payload.get("recipients")

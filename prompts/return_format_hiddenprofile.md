@@ -1,11 +1,12 @@
-Return JSON with the following shape:
+<Response Format>
+Return JSON with the following format:
 {
   "action": {"type": "<one_enabled_action>", "payload": {...}},
   "rationale": "optional short rationale"
 }
 
 Allowed payload examples:
-- communicate: {"channel":"broadcast","content":"...","content_type":"text"}
+- message: {"channel":"broadcast","content":"...","content_type":"text"}
 - decide: {"decision_id":"initial_vote","choice":"Candidate X","reveal":"aggregated"}
 - do_nothing: {"reason":"Waiting for others to respond."}
 

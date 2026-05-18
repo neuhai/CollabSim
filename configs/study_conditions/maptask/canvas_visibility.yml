@@ -1,0 +1,61 @@
+experiment:
+  id: "study_mt_canvas_visible"
+  type: "maptask"
+  seed: 29
+  max_steps: 120
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_maptask_guide_instructions.md"
+  task_guider: "prompts/task_maptask_guide_instructions.md"
+  task_follower: "prompts/task_maptask_follower_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format_maptask.md"
+  action: "prompts/action_prompt_maptask.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - {id: "A", role: "guider", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
+  - {id: "B", role: "follower", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
+
+action_space:
+  enabled: ["message", "update_map_progress", "do_nothing"]
+
+controls:
+  communication:
+    mode: "direct"
+    max_messages_per_turn: 999
+
+task:
+  type: "maptask"
+  target_steps: 10000
+  canvas_visibility: true
+  map_material:
+    map_json: "configs/map_task_material/map.json"
+    map_route_json: "configs/map_task_material/map_route.json"
+    map_route_txt: "configs/map_task_material/map_route.txt"
+    score_board_txt: "configs/map_task_material/score_board.txt"
+  roles:
+    A: "guider"
+    B: "follower"
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "event"
+  termination:
+    condition: "max_steps"
+    noop_consecutive_cycles: 2
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_action"
+  templates: ["situation_awareness_v1"]
+  questions_path: "prompts/interview_questions_map_task.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/study_conditions/maptask/canvas_visibility"
+  observation_events: true

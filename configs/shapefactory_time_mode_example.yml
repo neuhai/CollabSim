@@ -39,7 +39,7 @@ agents:
 action_space:
   enabled:
     [
-      "communicate",
+      "message",
       "produce_shape",
       "propose_trade_offer",
       "trade_response",

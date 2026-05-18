@@ -5,7 +5,7 @@ controller. The action envelope includes common fields and action-specific
 payloads.
 
 Common fields:
-- `type`: action primitive (`communicate`, `decide`, `propose`, `respond`, `transfer`, `do_nothing`)
+- `type`: action primitive (`message`, `decide`, `propose`, `respond`, `transfer`, `do_nothing`)
 - `actor_id`: agent identifier
 - `timestamp`: ISO-8601 string or step index
 - `payload`: action-specific payload

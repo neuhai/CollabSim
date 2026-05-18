@@ -29,6 +29,7 @@ class Observation:
     visible_events: list[dict[str, Any]]
     step_index: int
     memory: dict[str, Any] | None = None
+    game_status: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

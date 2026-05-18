@@ -1,0 +1,84 @@
+experiment:
+  id: "study_sf_group_8"
+  seed: 42
+  duration_sec: 300
+
+prompts:
+  system: "prompts/system_instructions.md"
+  persona: "prompts/persona_profile.md"
+  task: "prompts/task_shapefactory_instructions.md"
+  protocol: "prompts/protocol.md"
+  action_space: "prompts/action_space.md"
+  return_format: "prompts/return_format_shapefactory.md"
+  action: "prompts/action_prompt.md"
+  probe: "prompts/probe_prompt.md"
+  persona_profiles: "prompts/persona_profiles.json"
+
+agents:
+  - {id: "A", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "B", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "C", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "D", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "E", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "F", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "G", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "H", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+
+action_space:
+  enabled:
+    - "message"
+    - "produce_shape"
+    - "propose_trade_offer"
+    - "trade_response"
+    - "cancel_trade_offer"
+    - "fulfill_order"
+    - "do_nothing"
+
+controls:
+  communication:
+    mode: "direct"
+
+task:
+  type: "shapefactory"
+  target_steps: 100000
+  starting_money: 200
+  regular_cost: 40
+  specialty_cost: 15
+  min_trade_price: 15
+  max_trade_price: 100
+  incentive_money: 60
+  max_production_num: 3
+  shapes_order: 4
+  shapes_types: 3
+  shape_options: ["circle", "square", "triangle"]
+  specialties:
+    A: "circle"
+    B: "square"
+    C: "triangle"
+    D: "circle"
+    E: "square"
+    F: "triangle"
+    G: "circle"
+    H: "square"
+
+protocol:
+  turn_taking: "simultaneous"
+  step_mode: "time"
+  agent_trigger_interval_sec: 20
+  produce_shape_delay_sec: 10
+  termination:
+    condition: "time_elapsed"
+    noop_consecutive_cycles: 3
+  max_concurrent_requests: 8
+  memory_turn_limit: 7
+
+probe:
+  cadence: "per_agent_n_actions"
+  every_n_actions: 5
+  templates: ["grounding_v1"]
+  questions_path: "prompts/interview_questions_shape_factory_daytrader.json"
+
+logging:
+  trace_schema_version: "v0"
+  output_dir: "experiments/study_conditions/shapefactory/group_size_8"
+  observation_events: true

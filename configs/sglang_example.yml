@@ -60,7 +60,7 @@ agents:
       max_tokens: 1024
 
 action_space:
-  enabled: ["communicate", "decide", "do_nothing"]
+  enabled: ["message", "decide", "do_nothing"]
   decide:
     reveal: "aggregated"
 
@@ -82,7 +82,7 @@ task:
   phase_rules:
     initial_vote_decision_id: "initial_vote"
     final_vote_decision_id: "final_vote"
-    discussion_action_types: ["communicate"]
+    discussion_action_types: ["message"]
     discussion_duration_sec: 600
   shared_facts:
     - "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-off - is regarded as being not open to new ideas - is unfriendly - eats unhealthily"

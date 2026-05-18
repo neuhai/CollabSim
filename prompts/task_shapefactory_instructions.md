@@ -1,37 +1,41 @@
 <EXPERIMENT RULES>
-- Participants cooperate and compete with others.
-- Participants obtain shapes by production and trade.
-- Use the observation summary as the source of truth for your current state.
-- Treat the section that describes "You are agent ..." as your own state (money, inventory, specialty, tasks, production usage).
-- Treat peer information as limited public info (mainly specialties) unless a trade/message explicitly reveals more.
-- Use the market section for pending offers and offer ids.
+- You are participating in a game called 'The Shape Factory'.
+- In this game, participants cooperate and compete with others. Each participant is assigned a particular specialty shape and can produce their own specialty shape at a low cost.
+- In each experiment session, participants need to fill assigned "orders" for shapes, which contain a total of {shape_amount_per_order} shapes.
+- For every shape order you successfully fulfill, you can earn \${incentive_money} incentive money.
+- Your assigned orders will not include your specialty shape, so you must cooperate with other participants strategically.
+- There is limited money allocated to each participant at the beginning of each round, and a time constraint for the experiment. 
+- Participants can obtain shapes in two ways: 1. produce shapes themselves (at the cost of money and time); 2. communicate and buy shapes from other participants. The shapes you obtained go into your inventory. 
+- Use your specialty shape production as an advantage: other players need it to fulfill their orders.
 
 <EXPERIMENT GOALS>
 - Maximize your monetary balance while making order progress.
 
 <EXPERIMENT SETUP AND ASSIGNMENTS>
-- Read current setup from observation state each turn:
-  - your role/specialty/money/inventory/tasks
-  - other participants’ specialties
-  - pending offers
-  - rule bounds (trade price range, production cap)
-- For `produce_shape`, do not hardcode one shape across all agents.
-- Choose shape from your own state, prioritizing:
-  1) shapes needed by your pending tasks,
-  2) your specialty when economically favorable,
-  3) trade-driven demand inferred from recent messages/offers.
+- Communication Level: {communication_level}
+- Initial Money: ${starting_money}
+- Your Specialty Shape: {specialty_shape}
+- Specialty Shape Production Cost: ${specialty_cost} per unit
+- Regular Shape Production Cost: ${regular_cost} per unit
+- Production Time: Producing one shape costs {production_time} seconds.
+- Max Shape Production Limit: {max_production_num} shapes
+- Price Range for Trading: ${price_min}-${price_max}
+- Your Orders: {current_orders}
+- Incentive Money for each fulfilled order: ${incentive_money}
+- Participant List:
+{participants_list}
 
 <PERCEPTION OF EXPERIMENT STATUS>
 - You receive updated state and visible events regularly.
 - Use recent failures/rejections to avoid repeating invalid actions.
 
-<ACTION PRIORITY SEQUENCE>
-Each turn, check in this order and take the FIRST action that applies:
-1. **trade_response (accept)** — check `task_state.pending_offers`. If any offer has `target_id == your agent_id` and you can fulfill it (for a buy offer: you have the requested shape in inventory; for a sell offer: you can afford the price), before accepting, check if the offer price matches the agreement with your most recent conversation with that participant. Only accept when the price is consistent with your plan and agreement; otherwise, renegotiate through messaging.
-2. **fulfill_order** — if your inventory already contains all shapes needed for one or more of your tasks, do this immediately.
-3. **produce_shape** — if your inventory is missing shapes you need AND you have not hit the production cap, produce your specialty shape.
-4. **communicate** — if you need a shape from a specific participant and have not yet reached an agreement, send them a direct message first to coordinate price and availability before placing a formal offer. Also use communicate to respond to incoming messages or negotiate an active offer. Avoid repeating the same message if you have already asked and received no reply.
-5. **propose_trade_offer** — once you have confirmed via communication (or can infer from prior accepted trades) that a participant has the shape and is willing to trade, place a formal buy or sell offer. You may also place an offer without prior chat if the other party's availability is clear from the current state.
+<VALID ACTION SPACES>
+- message: Send a message to communicate or negotiate with others.
+- propose_trade_offer: Propose a trade (buy/sell ONE shape at a chosen price).
+- cancel_trade_offer: Cancel a trade offer that you sent.
+- trade_response: Accept or reject a trade offer you received.
+- produce_shape: Produce a shape with your money (shape will automatically be added to your inventory).
+- fulfill_order: Use shapes in inventory to complete orders.
 
 <ACTION PLANNING AND RESPONSES>
 - Plan strategically using current state, past events, and pending offers.
@@ -40,8 +44,8 @@ Each turn, check in this order and take the FIRST action that applies:
 
 <INSTRUCTIONS ON GENERATING VALID ACTIONS>
 - communication mode is provided in `protocol.communication_mode`.
-- if `communication_mode == "direct"`: communicate must use `channel: "direct"` and `recipients` must list only **other** participant ids.
-- if `communication_mode == "broadcast"`: communicate may use `channel: "broadcast"` or `channel: "direct"`.
+- if `communication_mode == "direct"`: message actions must use `channel: "direct"` and `recipients` must list only **other** participant ids.
+- if `communication_mode == "broadcast"`: message actions may use `channel: "broadcast"` or `channel: "direct"`.
 - for `channel: "broadcast"`: you may provide `recipients` as a list of one or more target participants; if omitted, the message is broadcast to all other participants.
 - never include your own participant id in `recipients`; avoid duplicate recipient ids.
 - propose_trade_offer: keep `price_per_unit` within rule bounds; `target_id` must not be yourself. For `offer_type: "sell"`, only offer shapes you currently own in your inventory summary. For `offer_type: "buy"`, only offer what you can afford with your current money.

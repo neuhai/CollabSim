@@ -19,7 +19,7 @@ Field-level guidance for experiment configuration.
 - `persona_profile_path`: optional path to persona profile prompt
 
 ### action_space
-- `enabled`: list of enabled action primitives (communicate, decide, propose, respond, transfer)
+- `enabled`: list of enabled action primitives (message, decide, propose, respond, transfer)
 - `decide.reveal`: default decision reveal strategy (sequential/aggregated/simultaneous)
 
 ### controls

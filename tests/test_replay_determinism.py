@@ -68,6 +68,22 @@ def _normalize_event(event: dict[str, object]) -> dict[str, object]:
     return normalized
 
 
+def _minimal_maptask_maps() -> dict[str, object]:
+    line = "S.F\n"
+    base: dict[str, object] = {
+        "map_text": line,
+        "map_format": "ascii_txt",
+        "map_rows": 1,
+        "map_cols": 3,
+        "grid": {"rows": 1, "cols": 3},
+        "special_points": {
+            "start": {"cell": [0, 0]},
+            "finish": {"cell": [0, 2]},
+        },
+    }
+    return {"A": dict(base), "B": dict(base)}
+
+
 class DeterministicReplayTests(unittest.TestCase):
     """Validate deterministic event log replay for identical configs."""
 
@@ -124,16 +140,16 @@ class DeterministicReplayTests(unittest.TestCase):
     def test_daytrader_action_replay_stability(self) -> None:
         config = _task_config(
             "daytrader",
-            enabled_actions=["make_investment"],
-            task_fields={"target_steps": 3, "starting_money": 200},
+            enabled_actions=["make_individual_investment"],
+            task_fields={"target_rounds": 3, "starting_money": 200},
         )
         controller_a = build_controller(_base_state(), config=config)
         controller_b = build_controller(_base_state(), config=config)
         invest_action = {
-            "type": "make_investment",
+            "type": "make_individual_investment",
             "actor_id": "A",
             "timestamp": 1,
-            "payload": {"invest_price": 20, "invest_decision_type": "individual"},
+            "payload": {"invest_price": 20},
         }
         controller_a.state.pending_actions.append(copy.deepcopy(invest_action))
         controller_b.state.pending_actions.append(copy.deepcopy(invest_action))
@@ -142,14 +158,20 @@ class DeterministicReplayTests(unittest.TestCase):
         log_a = [_normalize_event(event) for event in controller_a.state.event_log]
         log_b = [_normalize_event(event) for event in controller_b.state.event_log]
         self.assertEqual(log_a, log_b)
-        history = controller_a.state.task_state["participants"]["A"]["investment_history"]
+        private = controller_a.state.buffers.get("daytrader_private_participants")
+        self.assertIsInstance(private, dict)
+        history = private["A"]["investment_history"]
         self.assertEqual(len(history), 1)
 
     def test_maptask_action_replay_stability(self) -> None:
         config = _task_config(
             "maptask",
             enabled_actions=["update_map_progress"],
-            task_fields={"target_steps": 3, "roles": {"A": "follower", "B": "guider"}},
+            task_fields={
+                "target_steps": 3,
+                "roles": {"A": "follower", "B": "guider"},
+                "maps": _minimal_maptask_maps(),
+            },
         )
         controller_a = build_controller(_base_state(), config=config)
         controller_b = build_controller(_base_state(), config=config)
@@ -157,7 +179,10 @@ class DeterministicReplayTests(unittest.TestCase):
             "type": "update_map_progress",
             "actor_id": "A",
             "timestamp": 1,
-            "payload": {"map_progress": {"x": 12, "y": 5}},
+            "payload": {
+                "map_progress": {"note": "replay_test"},
+                "drawn_points": [[0, 1]],
+            },
         }
         controller_a.state.pending_actions.append(copy.deepcopy(progress_action))
         controller_b.state.pending_actions.append(copy.deepcopy(progress_action))
@@ -167,24 +192,8 @@ class DeterministicReplayTests(unittest.TestCase):
         log_b = [_normalize_event(event) for event in controller_b.state.event_log]
         self.assertEqual(log_a, log_b)
         progress = controller_a.state.task_state["participants"]["A"]["map_progress"]
-        self.assertEqual(progress.get("x"), 12)
-        self.assertEqual(progress.get("y"), 5)
-
-
-def _minimal_maptask_maps() -> dict[str, object]:
-    line = "S.F\n"
-    base: dict[str, object] = {
-        "map_text": line,
-        "map_format": "ascii_txt",
-        "map_rows": 1,
-        "map_cols": 3,
-        "grid": {"rows": 1, "cols": 3},
-        "special_points": {
-            "start": {"cell": [0, 0]},
-            "finish": {"cell": [0, 2]},
-        },
-    }
-    return {"A": dict(base), "B": dict(base)}
+        self.assertEqual(progress.get("last_drawn_points"), [[0, 1]])
+        self.assertEqual(progress.get("note"), "replay_test")
 
 
 class MapTaskCanvasVisibilityTests(unittest.TestCase):
@@ -292,7 +301,7 @@ class HiddenProfileDecisionRevealTests(unittest.TestCase):
                 "phase_rules": {
                     "initial_vote_decision_id": "initial_vote",
                     "final_vote_decision_id": "final_vote",
-                    "discussion_action_types": ["communicate"],
+                    "discussion_action_types": ["message"],
                 },
             },
             "protocol": {"turn_taking": "simultaneous", "step_mode": "event", "termination": {"condition": "max_steps"}},

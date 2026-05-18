@@ -53,7 +53,7 @@ def load_experiment_config(path: str) -> dict[str, Any]:
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise ConfigError(
             "PyYAML is required to load configuration files. "
-            "Install with `pip install pyyaml`."
+            "Install with `uv sync` (dependency `pyyaml` is listed in pyproject.toml)."
         ) from exc
 
     try:
