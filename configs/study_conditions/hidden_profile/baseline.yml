@@ -1,6 +1,7 @@
 experiment:
   id: "study_hp_baseline"
   seed: 42
+  max_steps: 90
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -40,8 +41,10 @@ task:
   phase_rules:
     initial_vote_decision_id: "initial_vote"
     final_vote_decision_id: "final_vote"
+    initial_vote_steps: 3
+    final_vote_steps: 3
     discussion_action_types: ["message"]
-    discussion_max_turns: 30
+    discussion_duration_sec: 300
     correct_answer: "Candidate C"
   shared_facts:
     - "Candidate A - can anticipate dangerous situations - is able to see complex connections - has excellent spatial vision - has very good leadership qualities - is sometimes not good at taking criticism - can be unorganised - is regarded as a show-off - is regarded as being not open to new ideas - is unfriendly - eats unhealthily"
@@ -58,8 +61,7 @@ task:
 
 protocol:
   turn_taking: "simultaneous"
-  step_mode: "time"
-  agent_trigger_interval_sec: 20
+  step_mode: "step"
   termination:
     condition: "task_complete"
 

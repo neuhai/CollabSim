@@ -321,9 +321,14 @@ class ExperimentController:
                 if phase != previous_hidden_profile_phase:
                     if phase in {"initial", "final"}:
                         next_cycle_at = min(next_cycle_at, now)
+                    if phase == "discussion" and isinstance(self.state.task_state, dict):
+                        if self.state.task_state.get("discussion_started_at_sec") is None:
+                            self.state.task_state["discussion_started_at_sec"] = elapsed_sec
                     if phase == "final":
                         hidden_profile_final_vote_queried = False
                         self._pending_realtime_message_queue = []
+                if phase == "discussion":
+                    self._maybe_end_hidden_profile_discussion_by_duration()
                 previous_hidden_profile_phase = phase
             if self._task_type() == "daytrader":
                 self._sync_daytrader_round_phase()
@@ -2460,7 +2465,6 @@ class ExperimentController:
     def _build_game_status_for_agent(self, agent_id: str) -> dict[str, Any]:
         """Runtime fields for prompts: steps, time limits, termination (not sensitive)."""
 
-        _ = agent_id
         out: dict[str, Any] = {
             "session_status": "running",
             "step_index": self.state.step_index,
@@ -2490,9 +2494,35 @@ class ExperimentController:
             dur = self._duration_seconds()
             if isinstance(dur, (int, float)) and float(dur) > 0:
                 out["duration_limit_sec"] = round(float(dur), 3)
+        if self._task_type() == "hidden_profile":
+            phase = self._hidden_profile_phase()
+            out["hidden_profile_phase"] = phase
+            task_state = self.state.task_state
+            if isinstance(task_state, dict):
+                out["session_complete"] = task_state.get("complete") is True
+            if self._hidden_profile_uses_step_schedule():
+                initial_end, final_start, max_steps = self._hidden_profile_step_schedule()
+                out["hidden_profile_max_steps"] = max_steps
+                out["hidden_profile_initial_vote_step_range"] = f"1-{initial_end}"
+                out["hidden_profile_final_vote_step_range"] = f"{final_start}-{max_steps}"
+                out["hidden_profile_discussion_step_range"] = (
+                    f"{initial_end + 1}-{final_start - 1}" if final_start > initial_end + 1 else "(none)"
+                )
+            participant = self._hidden_profile_participant_state(agent_id)
+            if isinstance(participant, dict):
+                initial_vote = participant.get("initial_vote")
+                final_vote = participant.get("final_vote")
+                out["hidden_profile_initial_vote_submitted"] = (
+                    isinstance(initial_vote, str) and bool(initial_vote)
+                )
+                out["hidden_profile_final_vote_submitted"] = (
+                    isinstance(final_vote, str) and bool(final_vote)
+                )
         return out
 
     def _build_observation_for_agent(self, agent_id: str) -> Observation:
+        if self._task_type() == "hidden_profile":
+            self._hidden_profile_phase()
         snapshot = build_state_snapshot(self.state)
         visible_state = self._filter_state_for_agent(snapshot, agent_id)
         visible_events = self._filter_visible_events_for_agent(agent_id)
@@ -3753,6 +3783,12 @@ class ExperimentController:
         if action_type == "do_nothing":
             if phase == "discussion":
                 return None
+            if phase == "initial" and isinstance(participant, dict):
+                if isinstance(participant.get("initial_vote"), str) and participant.get("initial_vote"):
+                    return None
+            if phase == "final" and isinstance(participant, dict):
+                if isinstance(participant.get("final_vote"), str) and participant.get("final_vote"):
+                    return None
 
         if phase == "discussion":
             if action_type in discussion_actions:
@@ -3801,10 +3837,47 @@ class ExperimentController:
             return task_type
         return None
 
-    def _hidden_profile_phase(self) -> str:
-        task_state = self.state.task_state
-        if not isinstance(task_state, dict):
-            return "discussion"
+    def _hidden_profile_uses_step_schedule(self) -> bool:
+        if self._step_mode() == "time":
+            return False
+        if not isinstance(self.config, dict):
+            return False
+        experiment = self.config.get("experiment", {})
+        if not isinstance(experiment, dict):
+            return False
+        return isinstance(experiment.get("max_steps"), int) and experiment.get("max_steps") > 0
+
+    def _hidden_profile_step_schedule(self) -> tuple[int, int, int]:
+        """Return (initial_end_step, final_start_step, max_steps) for step-scheduled HP."""
+
+        phase_rules = self._hidden_profile_phase_rules()
+        initial_end = phase_rules.get("initial_vote_steps", 3)
+        final_steps = phase_rules.get("final_vote_steps", 3)
+        if not isinstance(initial_end, int) or initial_end <= 0:
+            initial_end = 3
+        if not isinstance(final_steps, int) or final_steps <= 0:
+            final_steps = 3
+        max_steps = self._resolve_max_steps(None)
+        if initial_end + final_steps > max_steps:
+            initial_end = min(initial_end, max(1, max_steps - final_steps))
+        final_start = max(1, max_steps - final_steps + 1)
+        return initial_end, final_start, max_steps
+
+    def _hidden_profile_phase_from_step_schedule(self, task_state: dict[str, Any]) -> str:
+        step_index = self.state.step_index
+        if not isinstance(step_index, int) or step_index <= 0:
+            step_index = 1
+        initial_end, final_start, _max_steps = self._hidden_profile_step_schedule()
+        if step_index <= initial_end:
+            phase = "initial"
+        elif step_index >= final_start:
+            phase = "final"
+        else:
+            phase = "discussion"
+        task_state["phase"] = phase
+        return phase
+
+    def _hidden_profile_phase_legacy(self, task_state: dict[str, Any]) -> str:
         participants = task_state.get("participants")
         if not isinstance(participants, dict) or not participants:
             task_state["phase"] = "discussion"
@@ -3825,6 +3898,14 @@ class ExperimentController:
 
         task_state["phase"] = "discussion"
         return "discussion"
+
+    def _hidden_profile_phase(self) -> str:
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return "discussion"
+        if self._hidden_profile_uses_step_schedule():
+            return self._hidden_profile_phase_from_step_schedule(task_state)
+        return self._hidden_profile_phase_legacy(task_state)
 
     def _hidden_profile_participant_state(self, actor_id: str) -> dict[str, Any] | None:
         task_state = self.state.task_state
@@ -3852,33 +3933,84 @@ class ExperimentController:
             return value
         return 30
 
+    def _hidden_profile_discussion_duration_sec(self) -> float:
+        phase_rules = self._hidden_profile_phase_rules()
+        value = phase_rules.get("discussion_duration_sec", 60)
+        if isinstance(value, (int, float)) and float(value) >= 0:
+            return float(value)
+        return 60.0
+
+    def _hidden_profile_discussion_action_types(self) -> set[str]:
+        phase_rules = self._hidden_profile_phase_rules()
+        discussion_actions_raw = phase_rules.get("discussion_action_types")
+        discussion_actions: set[str] = {"message"}
+        if isinstance(discussion_actions_raw, list):
+            configured = {item for item in discussion_actions_raw if isinstance(item, str) and item}
+            if configured:
+                discussion_actions = configured
+        return discussion_actions
+
+    def _force_hidden_profile_final_phase(self) -> None:
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        task_state["discussion_force_final"] = True
+        task_state["phase"] = "final"
+        task_state["discussion_turns"] = 0
+        task_state["discussion_all_do_nothing_streak"] = 0
+        self._pending_realtime_message_queue = [
+            entry for entry in self._pending_realtime_message_queue
+            if not (isinstance(entry, dict) and entry.get("hidden_profile_phase_lock") == "discussion")
+        ]
+
+    def _maybe_end_hidden_profile_discussion_by_duration(self) -> None:
+        if self._hidden_profile_phase() != "discussion":
+            return
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        started = task_state.get("discussion_started_at_sec")
+        if not isinstance(started, (int, float)):
+            return
+        if self._elapsed_time_seconds() - float(started) >= self._hidden_profile_discussion_duration_sec():
+            self._force_hidden_profile_final_phase()
+
     def _advance_hidden_profile_phase_from_action(self, actor_id: str, action: dict[str, Any]) -> None:
-        if self._task_type() != "hidden_profile":
+        """Hidden Profile phase transitions are step-scheduled; actions do not advance phase."""
+
+        _ = (actor_id, action)
+        if self._task_type() != "hidden_profile" or self._hidden_profile_uses_step_schedule():
             return
         task_state = self.state.task_state
         if not isinstance(task_state, dict):
             return
         if self._hidden_profile_phase() != "discussion":
             return
+
+        action_type = action.get("type")
+        discussion_actions = self._hidden_profile_discussion_action_types()
+        if action_type not in discussion_actions and action_type != "do_nothing":
+            return
+
+        if action_type == "do_nothing":
+            streak = task_state.get("discussion_all_do_nothing_streak", 0)
+            if not isinstance(streak, int):
+                streak = 0
+            streak += 1
+            task_state["discussion_all_do_nothing_streak"] = streak
+            agent_count = len(self.state.agents) if isinstance(self.state.agents, dict) else 0
+            if agent_count > 0 and streak >= agent_count:
+                self._force_hidden_profile_final_phase()
+            return
+
+        task_state["discussion_all_do_nothing_streak"] = 0
         turns = task_state.get("discussion_turns", 0)
         if not isinstance(turns, int):
             turns = 0
         turns += 1
         task_state["discussion_turns"] = turns
-        max_turns = self._hidden_profile_discussion_max_turns()
-        discussion_pending = any(
-            isinstance(entry, dict) and entry.get("hidden_profile_phase_lock") == "discussion"
-            for entry in self._pending_realtime_message_queue
-        )
-        if discussion_pending and turns < max_turns:
-            return
-        task_state["discussion_force_final"] = True
-        task_state["phase"] = "final"
-        task_state["discussion_turns"] = 0
-        self._pending_realtime_message_queue = [
-            entry for entry in self._pending_realtime_message_queue
-            if not (isinstance(entry, dict) and entry.get("hidden_profile_phase_lock") == "discussion")
-        ]
+        if turns >= self._hidden_profile_discussion_max_turns():
+            self._force_hidden_profile_final_phase()
 
     def _elapsed_time_seconds(self) -> float:
         if self._wall_start_monotonic is None:

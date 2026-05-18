@@ -2,7 +2,8 @@
 - You are participating in a game called 'Hidden Profiles'.
 - In this game, participant will receive a material about the candidates and engage in a group chat to determine a best candidate from the candidate pool. 
 - Each participant is required to independently vote for the top-ranked participant both before and after the discussion period.
-- Please note that different participants may receive different materials. You need to thoroughly discuss and select the most qualified candidate.
+- Your received Candidate Document may be incomplete, and other teammates may have information that you do not have. You need to thoroughly discuss and select the most qualified candidate.
+- Session phases follow the simulation step index (see your status update): **steps 1–3** = initial vote only; **middle steps** = group discussion only; **last 3 steps** = final vote only.
 
 <EXPERIMENT GOALS>
 - Select the most suitable candidate from the candidate pool

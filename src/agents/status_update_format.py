@@ -8,7 +8,7 @@ from typing import Any
 from src.agents.interface import Observation
 
 
-def _task_phase_status_lines(observation: Observation) -> list[str]:
+def _task_phase_status_lines(agent_id: str, observation: Observation) -> list[str]:
     """Human-readable phase reminders for prompts (DayTrader + Hidden Profile)."""
 
     st = observation.state if isinstance(observation.state, dict) else {}
@@ -16,7 +16,10 @@ def _task_phase_status_lines(observation: Observation) -> list[str]:
     if not isinstance(ts, dict):
         return []
     task_type = ts.get("task_type")
+    gs = observation.game_status if isinstance(observation.game_status, dict) else {}
     phase = ts.get("phase")
+    if not isinstance(phase, str) and isinstance(gs.get("hidden_profile_phase"), str):
+        phase = gs.get("hidden_profile_phase")
     if not isinstance(phase, str):
         return []
 
@@ -62,15 +65,63 @@ def _task_phase_status_lines(observation: Observation) -> list[str]:
         if not isinstance(final_id, str) or not final_id:
             final_id = "final_vote"
 
-        lines = [f"Hidden Profile · phase={phase}"]
+        phase_labels = {
+            "initial": "INITIAL VOTE (pre-discussion) — decide only, no messaging",
+            "discussion": "DISCUSSION — message / do_nothing only, no decide",
+            "final": "FINAL VOTE (post-discussion) — decide only, no messaging",
+        }
+        lines = [
+            f"Hidden Profile · current phase: {phase} ({phase_labels.get(phase, 'see task rules')})",
+        ]
+        init_range = gs.get("hidden_profile_initial_vote_step_range")
+        disc_range = gs.get("hidden_profile_discussion_step_range")
+        final_range = gs.get("hidden_profile_final_vote_step_range")
+        if isinstance(init_range, str) and isinstance(final_range, str):
+            disc_text = disc_range if isinstance(disc_range, str) else "middle steps"
+            lines.append(
+                f"Step schedule: initial vote steps {init_range}; discussion steps {disc_text}; "
+                f"final vote steps {final_range}."
+            )
+        step_idx = gs.get("step_index")
+        if isinstance(step_idx, int) and step_idx > 0:
+            lines.append(f"Current simulation step: {step_idx}.")
+        remaining = gs.get("remaining_steps")
+        max_steps = gs.get("max_steps") or gs.get("hidden_profile_max_steps")
+        if isinstance(remaining, int) and isinstance(max_steps, int) and max_steps > 0:
+            lines.append(f"Remaining steps (within max_steps budget): {remaining} of {max_steps}.")
+        initial_done = gs.get("hidden_profile_initial_vote_submitted")
+        final_done = gs.get("hidden_profile_final_vote_submitted")
+        if initial_done is True:
+            lines.append("Your initial vote: already submitted.")
+        elif initial_done is False and phase != "initial":
+            lines.append("Your initial vote: already submitted.")
+        if final_done is True:
+            lines.append("Your final vote: already submitted.")
+        if gs.get("session_complete") is True:
+            lines.append("Session is complete. No further actions are required.")
+
         if phase == "initial":
-            lines.append(
-                f"Initial vote: use decide only, with decision_id exactly \"{initial_id}\" and a non-empty choice."
-            )
+            if initial_done is True:
+                lines.append(
+                    "Wait for other participants to finish initial voting. "
+                    "do_nothing is allowed; message and decide are not."
+                )
+            else:
+                lines.append(
+                    f"Submit exactly one decide with decision_id \"{initial_id}\" and a non-empty choice. "
+                    "message and do_nothing are not allowed in this phase."
+                )
         elif phase == "final":
-            lines.append(
-                f"Final vote: use decide only, with decision_id exactly \"{final_id}\" and a non-empty choice."
-            )
+            if final_done is True:
+                lines.append(
+                    "Wait for other participants to finish final voting (or for the run to end). "
+                    "do_nothing is allowed; message and decide are not."
+                )
+            else:
+                lines.append(
+                    f"Submit exactly one decide with decision_id \"{final_id}\" and a non-empty choice. "
+                    "message and do_nothing are not allowed in this phase."
+                )
         elif phase == "discussion":
             disc_raw = phase_rules.get("discussion_action_types")
             if isinstance(disc_raw, list):
@@ -82,7 +133,7 @@ def _task_phase_status_lines(observation: Observation) -> list[str]:
             lines.append(
                 "Discussion phase: use "
                 + ", ".join(allowed)
-                + ", or do_nothing. Voting (decide) is not allowed until the final phase."
+                + ", or do_nothing. decide / voting is not allowed until the final phase."
             )
         else:
             lines.append("Follow task rules for allowed actions in this phase.")
@@ -121,6 +172,9 @@ def _format_maptask_incremental_status(agent_id: str, observation: Observation) 
     ms = gs.get("max_steps")
     if isinstance(ms, int) and ms > 0:
         lines.append(f"Step: {si} / {ms}")
+        rs = gs.get("remaining_steps")
+        if isinstance(rs, int):
+            lines.append(f"Remaining steps (within max_steps budget): {rs}")
     else:
         lines.append(f"Step index: {si}")
 
@@ -242,7 +296,7 @@ def format_agent_status_update(agent_id: str, observation: Observation) -> str:
             lines.append(f"Step mode: {sm}")
         lines.append("")
 
-    phase_lines = _task_phase_status_lines(observation)
+    phase_lines = _task_phase_status_lines(agent_id, observation)
     if phase_lines:
         lines.append("=== Task phase status (allowed actions this turn) ===")
         lines.extend(phase_lines)

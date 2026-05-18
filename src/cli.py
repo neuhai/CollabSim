@@ -253,11 +253,15 @@ def _runtime_progress_printer(name: str, payload: dict[str, object], config: dic
 
 
 def _runtime_prefix(payload: dict[str, object]) -> str:
+    step_index = payload.get("step_index")
     sim_time_ms = payload.get("sim_time_ms")
+    if isinstance(step_index, int) and (not isinstance(sim_time_ms, int) or sim_time_ms <= 0):
+        return f"step={step_index}"
     if isinstance(sim_time_ms, int):
         return f"t={sim_time_ms}ms"
-    step_index = payload.get("step_index")
-    return f"step={step_index}"
+    if isinstance(step_index, int):
+        return f"step={step_index}"
+    return "step=?"
 
 
 def _action_event_printer(event: dict[str, object]) -> None:

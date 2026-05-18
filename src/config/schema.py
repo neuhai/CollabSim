@@ -387,6 +387,20 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
                 raise ConfigSchemaError(
                     "task.phase_rules.discussion_max_turns must be a positive integer when provided."
                 )
+            initial_vote_steps = phase_rules.get("initial_vote_steps")
+            if initial_vote_steps is not None and (
+                not isinstance(initial_vote_steps, int) or initial_vote_steps <= 0
+            ):
+                raise ConfigSchemaError(
+                    "task.phase_rules.initial_vote_steps must be a positive integer when provided."
+                )
+            final_vote_steps = phase_rules.get("final_vote_steps")
+            if final_vote_steps is not None and (
+                not isinstance(final_vote_steps, int) or final_vote_steps <= 0
+            ):
+                raise ConfigSchemaError(
+                    "task.phase_rules.final_vote_steps must be a positive integer when provided."
+                )
     if task_type == "shapefactory":
         _require_positive_number_if_present(task_cfg, "starting_money", allow_zero=True)
         _require_positive_number_if_present(task_cfg, "regular_cost")
