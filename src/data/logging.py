@@ -60,11 +60,37 @@ def append_trace(path: Path, record: dict[str, Any]) -> None:
         handle.write("\n")
 
 
-def append_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> None:
+def append_jsonl(path: Path, records: Iterable[dict[str, Any]], *, indent: int | None = 2) -> None:
     with path.open("a", encoding="utf-8") as handle:
         for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False))
+            handle.write(json.dumps(record, ensure_ascii=False, indent=indent))
             handle.write("\n")
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read JSONL records (compact one-line or pretty-printed multi-line per record)."""
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return []
+    records: list[dict[str, Any]] = []
+    decoder = json.JSONDecoder()
+    idx = 0
+    length = len(text)
+    while idx < length:
+        while idx < length and text[idx] in " \t\r\n":
+            idx += 1
+        if idx >= length:
+            break
+        try:
+            obj, end = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            break
+        if isinstance(obj, dict):
+            records.append(obj)
+        idx = end
+    return records
 
 
 def write_events_json(path: Path, records: Iterable[dict[str, Any]]) -> None:

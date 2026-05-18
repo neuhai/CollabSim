@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.data.logging import read_jsonl
+
 
 @dataclass
 class Trace:
@@ -55,24 +57,6 @@ class Trace:
         return [p for p in self.probes if p.get("actor_id") == actor_id]
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    if not path.exists():
-        return records
-    with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-                if isinstance(obj, dict):
-                    records.append(obj)
-            except json.JSONDecodeError:
-                continue
-    return records
-
-
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -88,9 +72,9 @@ def load_trace(run_dir: str | Path) -> Trace:
     """Load all trace files from *run_dir* and return a :class:`Trace`."""
     root = Path(run_dir)
     trace = Trace(run_dir=root)
-    trace.events = _read_jsonl(root / "events.jsonl")
-    trace.probes = _read_jsonl(root / "probes.jsonl")
-    trace.actions = _read_jsonl(root / "actions.jsonl")
+    trace.events = read_jsonl(root / "events.jsonl")
+    trace.probes = read_jsonl(root / "probes.jsonl")
+    trace.actions = read_jsonl(root / "actions.jsonl")
     trace.manifest = _read_json(root / "run_manifest.json")
     trace.summary = _read_json(root / "run_summary.json")
     return trace

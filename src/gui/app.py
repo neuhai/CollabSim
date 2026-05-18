@@ -36,18 +36,9 @@ def _safe_run_id(raw: str | None) -> str:
 
 
 def _read_jsonl(path: Path) -> list[dict[str, object]]:
-    records: list[dict[str, object]] = []
-    if not path.exists():
-        return records
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            records.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return records
+    from src.data.logging import read_jsonl
+
+    return read_jsonl(path)  # type: ignore[return-value]
 
 
 def _list_presets() -> list[str]:
