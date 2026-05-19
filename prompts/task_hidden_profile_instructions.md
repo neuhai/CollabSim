@@ -3,7 +3,7 @@
 - In this game, participant will receive a material about the candidates and engage in a group chat to determine a best candidate from the candidate pool. 
 - Each participant is required to independently vote for the top-ranked participant both before and after the discussion period.
 - Your received Candidate Document may be incomplete, and other teammates may have information that you do not have. You need to thoroughly discuss and select the most qualified candidate.
-- Session phases follow the simulation step index (see your status update): **steps 1–3** = initial vote only; **middle steps** = group discussion only; **last 3 steps** = final vote only.
+- Session phases follow the simulation step index (see your status update): **step 1** = initial vote only; **middle steps** = group discussion only; **last step** = final vote only. If the session ends early, you will still be prompted once for a final vote.
 
 <EXPERIMENT GOALS>
 - Select the most suitable candidate from the candidate pool
@@ -30,4 +30,4 @@
 - You are not expected to respond to every message. Participate only when you feel your input is necessary.
 - Base your discussion on the information available to you. Avoid repeating points that others have already made.
 - During the discussion, do not express excessive agreement or acknowledgement in your message. Instead, you should stand your ground based on the information you received and perceived.
-- If you believe there is nothing further to discuss, you may stop generating additional responses.
+- Actively participate in the conversation and thoroughly compare all candidates on their full pros and cons so you can judge who is best qualified.

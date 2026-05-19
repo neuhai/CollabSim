@@ -22,7 +22,10 @@ agents:
   - {id: "B", role: "follower", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
 
 action_space:
-  enabled: ["message", "update_map_progress", "do_nothing"]
+  enabled: ["message", "draw", "erase", "undo", "reset", "do_nothing"]
+  enabled_by_role:
+    guider: ["message", "do_nothing"]
+    follower: ["message", "draw", "erase", "undo", "reset", "do_nothing"]
 
 controls:
   communication:

@@ -2,7 +2,7 @@
 
 # Task audit summary:
 # - Initial state: participants with role/map/map_progress and target_steps/steps_taken/complete.
-# - Supported actions: task-specific update_map_progress via maptask_apply_action.
+# - Supported actions: draw, erase, undo, reset via maptask_apply_action.
 # - Stop condition: task marks complete when steps_taken >= target_steps.
 # - Probing trigger: no task-local trigger; probing cadence is controlled by controller/probe config.
 
@@ -112,7 +112,7 @@ def maptask_apply_action(
     """Apply MapTask-specific actions against task state."""
 
     action_type = action.get("type")
-    if action_type not in ("update_map_progress", "draw", "erase", "undo", "reset"):
+    if action_type not in ("draw", "erase", "undo", "reset"):
         return False
     task_state = state.task_state
     if not isinstance(task_state, dict) or task_state.get("task_type") != "maptask":
@@ -124,7 +124,7 @@ def maptask_apply_action(
     if not isinstance(me, dict):
         return False
 
-    if action_type in ("update_map_progress", "draw", "erase", "undo", "reset"):
+    if action_type in ("draw", "erase", "undo", "reset"):
         role = me.get("role")
         if role != "follower":
             emit_event(
@@ -138,7 +138,7 @@ def maptask_apply_action(
             )
             return True
 
-    if action_type in ("update_map_progress", "draw"):
+    if action_type == "draw":
         payload = action.get("payload", {})
         if not isinstance(payload, dict):
             emit_event(
@@ -152,16 +152,15 @@ def maptask_apply_action(
             )
             return True
         progress = payload.get("map_progress")
-        if action_type == "draw":
-            if not isinstance(progress, dict):
-                progress = {}
-            cells = payload.get("cells")
-            if cells is None:
-                cells = payload.get("drawn_points")
-            payload = {
-                "map_progress": {**progress, "drawn_points": cells},
-                "drawn_points": cells,
-            }
+        if not isinstance(progress, dict):
+            progress = {}
+        cells = payload.get("cells")
+        if cells is None:
+            cells = payload.get("drawn_points")
+        payload = {
+            "map_progress": {**progress, "drawn_points": cells},
+            "drawn_points": cells,
+        }
         return _maptask_apply_follower_draw_payload(state, actor_id, payload, emit_event, log_type=action_type)
 
     if action_type == "erase":
@@ -197,7 +196,7 @@ def _maptask_apply_follower_draw_payload(
             visibility="system",
             payload={
                 "action": {"type": log_type, "payload": payload},
-                "error_message": "update_map_progress requires map_progress object (may be empty plus drawn_points).",
+                "error_message": "draw requires map_progress object (may be empty) plus cells or drawn_points.",
             },
         )
         return True

@@ -22,8 +22,8 @@ def _hidden_profile_config(*, max_steps: int = 90) -> dict[str, object]:
             "type": "hidden_profile",
             "target_steps": 3,
             "phase_rules": {
-                "initial_vote_steps": 3,
-                "final_vote_steps": 3,
+                "initial_vote_steps": 1,
+                "final_vote_steps": 1,
             },
             "shared_facts": ["shared"],
             "private_facts": {"A": ["private-a"], "B": ["private-b"], "C": ["private-c"]},
@@ -46,11 +46,9 @@ class HiddenProfilePhaseTests(unittest.TestCase):
         )
         for step, expected in [
             (1, "initial"),
-            (3, "initial"),
-            (4, "discussion"),
+            (2, "discussion"),
             (50, "discussion"),
-            (87, "discussion"),
-            (88, "final"),
+            (89, "discussion"),
             (90, "final"),
         ]:
             controller.state.step_index = step
@@ -73,24 +71,39 @@ class HiddenProfilePhaseTests(unittest.TestCase):
         ts = controller.state.task_state
         self.assertFalse(ts.get("discussion_force_final"))
 
-    def test_initial_votes_do_not_force_discussion_end(self) -> None:
+    def test_forced_final_vote_overrides_step_schedule(self) -> None:
+        controller = build_controller(
+            ExperimentState(agents={}, task_state={}, resources={}, turn_state={}, buffers={}),
+            config=_hidden_profile_config(),
+        )
+        controller.state.step_index = 20
+        ts = controller.state.task_state
+        ts["forced_final_vote"] = True
+        self.assertEqual(controller._hidden_profile_phase(), "final")
+
+    def test_initial_vote_uses_action_timestamp_when_applied_next_step(self) -> None:
         controller = build_controller(
             ExperimentState(agents={}, task_state={}, resources={}, turn_state={}, buffers={}),
             config=_hidden_profile_config(),
         )
         controller.state.step_index = 2
-        ts = controller.state.task_state
-        participants = ts["participants"]
-        for entry in participants.values():
-            entry["initial_vote"] = "Candidate A"
-        controller._advance_hidden_profile_phase_from_action(
-            "C",
-            {
-                "type": "decide",
-                "payload": {"decision_id": "initial_vote", "choice": "Candidate A"},
-            },
+        self.assertEqual(controller._hidden_profile_phase(), "discussion")
+        vote_action = {
+            "type": "decide",
+            "timestamp": 1,
+            "payload": {"decision_id": "initial_vote", "choice": "Candidate A"},
+        }
+        self.assertIsNone(controller._check_hidden_profile_phase_preconditions(vote_action, "A"))
+        self.assertIsNotNone(
+            controller._check_hidden_profile_phase_preconditions(
+                {
+                    "type": "decide",
+                    "timestamp": 2,
+                    "payload": {"decision_id": "initial_vote", "choice": "Candidate A"},
+                },
+                "A",
+            )
         )
-        self.assertEqual(controller._hidden_profile_phase(), "initial")
 
 
 if __name__ == "__main__":

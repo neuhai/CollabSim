@@ -25,7 +25,6 @@ Allowed payload examples:
 - erase: {"cells":[[21,53],[21,52]]}
 - undo: {}
 - reset: {}
-- update_map_progress (legacy alias for draw): {"map_progress":{"segment":"optional_note"},"drawn_points":[[21,53],[21,52]]}
 - do_nothing: {"reason":"No valid high-value move this turn."}
 
 Output strictness:
@@ -34,4 +33,4 @@ Output strictness:
 - If you use `actions`, each action must still be valid under current task rules.
 - For maptask communication content, do not use coordinates (row/col, x/y, cell indices).
 - Use landmark names plus relative directions to describe movement and position.
-- Coordinate arrays are allowed only in draw.cells, erase.cells, or update_map_progress drawn_points.
+- Coordinate arrays are allowed only in draw.cells or erase.cells.

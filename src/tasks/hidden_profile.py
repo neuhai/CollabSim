@@ -80,8 +80,8 @@ def hidden_profile_init_state(config: dict[str, Any]) -> dict[str, Any]:
         "phase_rules": {
             "initial_vote_decision_id": initial_vote_decision_id,
             "final_vote_decision_id": final_vote_decision_id,
-            "initial_vote_steps": phase_rules_cfg.get("initial_vote_steps", 3),
-            "final_vote_steps": phase_rules_cfg.get("final_vote_steps", 3),
+            "initial_vote_steps": phase_rules_cfg.get("initial_vote_steps", 1),
+            "final_vote_steps": phase_rules_cfg.get("final_vote_steps", 1),
             "discussion_duration_sec": float(discussion_duration_sec),
         },
     }

@@ -236,7 +236,10 @@ def compose_probe_prompt(
         f"- fulfill_order: {{\"order_indices\":[0,1]}}\n"
         f"- make_individual_investment: {{\"invest_price\":30}}\n"
         f"- make_group_investment: {{\"invest_price\":30}}\n"
-        f"- update_map_progress: {{\"map_progress\":{{\"segment\":\"start_to_bridge\",\"status\":\"confirmed\"}}}}\n"
+        f"- draw: {{\"cells\":[[19,53],[20,53],[21,53]]}}\n"
+        f"- erase: {{\"cells\":[[19,53],[20,53]]}}\n"
+        f"- undo: {{}}\n"
+        f"- reset: {{}}\n"
         f"- do_nothing: {{\"reason\":\"...\"}}\n\n"
     )
 

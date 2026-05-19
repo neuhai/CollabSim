@@ -34,17 +34,16 @@ Action payload references:
 - erase: {{"cells":[[19,53],[20,53]]}}
 - undo: {{}}
 - reset: {{}}
-- update_map_progress (legacy): {{"map_progress":{{"segment":"start_to_bridge","status":"confirmed"}},"drawn_points":[[19,53],[20,53],[21,53]]}}
 - do_nothing: {{"reason":"..."}}
 
 Important:
 - Match payload keys exactly.
 - If direct communication is enforced, never use broadcast.
 - If a previous action was rejected, change strategy and do not repeat the same invalid payload.
-- In maptask follower turns, you may combine route edits (`draw`, `erase`, `undo`, `reset`, or `update_map_progress`) with `message` in one ordered `actions` array.
+- In maptask follower turns, you may combine route edits (`draw`, `erase`, `undo`, `reset`) with `message` in one ordered `actions` array.
 - In maptask `message` payload `content`, never describe positions with coordinates (row/col, x/y, cell indices).
 - Use landmark names and relative directions for spatial descriptions.
-- Coordinates are only valid inside `draw.cells`, `erase.cells`, or `update_map_progress.drawn_points`.
+- Coordinates are only valid inside `draw.cells` or `erase.cells`.
 - In maptask guider turns, if the follower did not ask a new question and no new route continuation is available, choose `do_nothing` instead of repeating prior hold/stop wording.
 - **Follower drawing:** Before `draw`, every `[row,col]` must match `map_text` with that cell **not** `#`, the path must be **4-connected** from `S` or existing route, and the **first** step must be a **legal neighbor of `S`**. Use shorter `cells` lists when unsure.
 - Task-specific action constraints (per `task_type`) are defined in the task instructions block earlier in the prompt, not here.

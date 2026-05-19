@@ -30,7 +30,6 @@ ACTION_TYPES: tuple[str, ...] = (
     "make_investment",
     "make_individual_investment",
     "make_group_investment",
-    "update_map_progress",
     "draw",
     "erase",
     "undo",
@@ -90,8 +89,6 @@ def validate_action(action: Mapping[str, Any]) -> None:
         _validate_make_individual_investment(payload)
     elif action_type == "make_group_investment":
         _validate_make_group_investment(payload)
-    elif action_type == "update_map_progress":
-        _validate_update_map_progress(payload)
     elif action_type == "draw":
         _validate_map_draw(payload)
     elif action_type == "erase":
@@ -226,13 +223,6 @@ def _validate_make_group_investment(payload: Mapping[str, Any]) -> None:
     invest_price = payload.get("invest_price")
     if not isinstance(invest_price, (int, float)) or float(invest_price) < 0:
         raise ActionValidationError("make_group_investment.invest_price must be a non-negative number.")
-
-
-def _validate_update_map_progress(payload: Mapping[str, Any]) -> None:
-    _require_fields(payload, ("map_progress",))
-    map_progress = payload.get("map_progress")
-    if not isinstance(map_progress, Mapping):
-        raise ActionValidationError("update_map_progress.map_progress must be an object.")
 
 
 def _validate_map_draw(payload: Mapping[str, Any]) -> None:

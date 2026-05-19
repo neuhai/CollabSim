@@ -23,7 +23,10 @@ Action payload references:
 - fulfill_order: {{"order_indices":[0,1]}}
 - make_individual_investment: {{"invest_price":30}}
 - make_group_investment: {{"invest_price":30}}
-- update_map_progress: {{"map_progress":{{"segment":"start_to_bridge","status":"confirmed","drawn_points":[[19,53],[20,53],[21,53]]}}}}
+- draw: {{"cells":[[19,53],[20,53],[21,53]]}}
+- erase: {{"cells":[[19,53],[20,53]]}}
+- undo: {{}}
+- reset: {{}}
 - do_nothing: {{"reason":"..."}}
 
 Important:

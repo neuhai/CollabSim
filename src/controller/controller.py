@@ -224,6 +224,15 @@ class ExperimentController:
                         noop_cycle_streak = 0
                     if noop_cycle_streak >= noop_cycle_target:
                         break
+        self._maybe_run_hidden_profile_forced_final_vote()
+        if (
+            self._task_type() == "hidden_profile"
+            and self._step_mode() in {"step", "event"}
+            and self.state.pending_actions
+        ):
+            self._process_actions()
+            if self.task_hook is not None:
+                self.task_hook(self.state)
         self._export_metrics()
         self._flush_logs()
         self._write_manifest()
@@ -2220,7 +2229,7 @@ class ExperimentController:
                 rejected_actors.add(actor_id)
             else:
                 action_type = processed.get("type")
-                if action_type in ("update_map_progress", "draw", "erase", "undo", "reset"):
+                if action_type in ("draw", "erase", "undo", "reset"):
                     acc = compute_drawing_accuracy_snapshot(self.state.task_state)
                     if acc is not None and 0 <= validated_idx < len(self.state.event_log):
                         ev = self.state.event_log[validated_idx]
@@ -2231,7 +2240,7 @@ class ExperimentController:
                     self._invalidate_maptask_guider_observations()
                 if (
                     isinstance(action_type, str)
-                    and action_type in ("update_map_progress", "draw", "erase", "undo", "reset")
+                    and action_type in ("draw", "erase", "undo", "reset")
                     and self.run_paths is not None
                 ):
                     participants = self.state.task_state.get("participants", {})
@@ -2264,7 +2273,6 @@ class ExperimentController:
                 continue
             action = payload.get("action")
             if isinstance(action, dict) and action.get("type") in (
-                "update_map_progress",
                 "draw",
                 "erase",
                 "undo",
@@ -2500,6 +2508,7 @@ class ExperimentController:
             task_state = self.state.task_state
             if isinstance(task_state, dict):
                 out["session_complete"] = task_state.get("complete") is True
+                out["hidden_profile_forced_final_vote"] = task_state.get("forced_final_vote") is True
             if self._hidden_profile_uses_step_schedule():
                 initial_end, final_start, max_steps = self._hidden_profile_step_schedule()
                 out["hidden_profile_max_steps"] = max_steps
@@ -3005,6 +3014,76 @@ class ExperimentController:
             for entry in participants.values()
         ):
             task_state["complete"] = True
+
+    def _hidden_profile_all_final_votes_submitted(self) -> bool:
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return False
+        participants = task_state.get("participants")
+        if not isinstance(participants, dict) or not participants:
+            return False
+        return all(
+            isinstance(entry, dict) and isinstance(entry.get("final_vote"), str) and entry.get("final_vote")
+            for entry in participants.values()
+        )
+
+    def _maybe_run_hidden_profile_forced_final_vote(self) -> None:
+        """If the run ends before the scheduled final step, prompt all agents to submit final votes."""
+
+        if self._task_type() != "hidden_profile":
+            return
+        if self._hidden_profile_all_final_votes_submitted():
+            return
+        if self._hidden_profile_uses_step_schedule():
+            _initial_end, final_start, _max_steps = self._hidden_profile_step_schedule()
+            if self.state.step_index >= final_start:
+                if self.state.pending_actions:
+                    return
+                if self._hidden_profile_all_final_votes_submitted():
+                    return
+        self._run_hidden_profile_forced_final_vote_round()
+
+    def _run_hidden_profile_forced_final_vote_round(self) -> None:
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        task_state["forced_final_vote"] = True
+        task_state["phase"] = "final"
+        self._pending_realtime_message_queue = [
+            entry
+            for entry in self._pending_realtime_message_queue
+            if not (isinstance(entry, dict) and entry.get("hidden_profile_phase_lock") == "discussion")
+        ]
+        self.state.observation_cache.clear()
+
+        agent_ids = sorted(
+            agent_id
+            for agent_id in self.state.agents.keys()
+            if isinstance(agent_id, str) and agent_id
+        )
+        if not agent_ids:
+            return
+
+        if self._step_mode() == "time":
+            delayed_actions: list[tuple[float, str, dict[str, Any]]] = []
+            idle_agents = [agent_id for agent_id in agent_ids if self._is_agent_idle(agent_id)]
+            if idle_agents:
+                self._trigger_idle_agents_parallel(idle_agents, delayed_actions)
+                self._process_due_realtime_actions(delayed_actions, time.monotonic())
+            self._ensure_hidden_profile_completion()
+            return
+
+        for agent_id in agent_ids:
+            self.state.last_context_hash.pop(agent_id, None)
+            self.state.pending_context_updates[agent_id] = {
+                "signature": f"forced_final_vote_{self.state.step_index}"
+            }
+        self._process_context_updates()
+        if self.state.pending_actions:
+            self._process_actions()
+            if self.task_hook is not None:
+                self.task_hook(self.state)
+        self._ensure_hidden_profile_completion()
 
     def _queue_targeted_realtime_triggers(self, action: dict[str, Any], actor_id: str) -> None:
         if self._step_mode() != "time":
@@ -3757,7 +3836,7 @@ class ExperimentController:
             return None
         action_type = action.get("type")
         payload = action.get("payload")
-        phase = self._hidden_profile_phase()
+        phase = self._hidden_profile_phase(action=action)
         participant = self._hidden_profile_participant_state(actor_id)
         phase_rules = self._hidden_profile_phase_rules()
         initial_decision_id = phase_rules.get("initial_vote_decision_id", "initial_vote")
@@ -3851,20 +3930,34 @@ class ExperimentController:
         """Return (initial_end_step, final_start_step, max_steps) for step-scheduled HP."""
 
         phase_rules = self._hidden_profile_phase_rules()
-        initial_end = phase_rules.get("initial_vote_steps", 3)
-        final_steps = phase_rules.get("final_vote_steps", 3)
+        initial_end = phase_rules.get("initial_vote_steps", 1)
+        final_steps = phase_rules.get("final_vote_steps", 1)
         if not isinstance(initial_end, int) or initial_end <= 0:
-            initial_end = 3
+            initial_end = 1
         if not isinstance(final_steps, int) or final_steps <= 0:
-            final_steps = 3
+            final_steps = 1
         max_steps = self._resolve_max_steps(None)
         if initial_end + final_steps > max_steps:
             initial_end = min(initial_end, max(1, max_steps - final_steps))
         final_start = max(1, max_steps - final_steps + 1)
         return initial_end, final_start, max_steps
 
-    def _hidden_profile_phase_from_step_schedule(self, task_state: dict[str, Any]) -> str:
+    def _hidden_profile_step_for_action(self, action: dict[str, Any]) -> int:
+        timestamp = action.get("timestamp")
+        if isinstance(timestamp, int) and timestamp > 0:
+            return timestamp
         step_index = self.state.step_index
+        if isinstance(step_index, int) and step_index > 0:
+            return step_index
+        return 1
+
+    def _hidden_profile_phase_from_step_schedule(
+        self,
+        task_state: dict[str, Any],
+        step_index: int | None = None,
+    ) -> str:
+        if step_index is None:
+            step_index = self.state.step_index
         if not isinstance(step_index, int) or step_index <= 0:
             step_index = 1
         initial_end, final_start, _max_steps = self._hidden_profile_step_schedule()
@@ -3899,12 +3992,16 @@ class ExperimentController:
         task_state["phase"] = "discussion"
         return "discussion"
 
-    def _hidden_profile_phase(self) -> str:
+    def _hidden_profile_phase(self, *, action: dict[str, Any] | None = None) -> str:
         task_state = self.state.task_state
         if not isinstance(task_state, dict):
             return "discussion"
+        if task_state.get("forced_final_vote") is True:
+            task_state["phase"] = "final"
+            return "final"
         if self._hidden_profile_uses_step_schedule():
-            return self._hidden_profile_phase_from_step_schedule(task_state)
+            effective_step = self._hidden_profile_step_for_action(action) if action is not None else None
+            return self._hidden_profile_phase_from_step_schedule(task_state, effective_step)
         return self._hidden_profile_phase_legacy(task_state)
 
     def _hidden_profile_participant_state(self, actor_id: str) -> dict[str, Any] | None:

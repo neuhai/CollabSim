@@ -99,6 +99,10 @@ def _task_phase_status_lines(agent_id: str, observation: Observation) -> list[st
             lines.append("Your final vote: already submitted.")
         if gs.get("session_complete") is True:
             lines.append("Session is complete. No further actions are required.")
+        if gs.get("hidden_profile_forced_final_vote") is True and phase == "final":
+            lines.append(
+                "The session is ending before the scheduled final step; submit your final vote now."
+            )
 
         if phase == "initial":
             if initial_done is True:

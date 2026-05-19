@@ -15,7 +15,10 @@ Allowed payload examples:
 - fulfill_order: {"order_indices":[0]}
 - make_individual_investment: {"invest_price":40}
 - make_group_investment: {"invest_price":40}
-- update_map_progress: {"map_progress":{"segment":"bridge_to_tower","status":"done","drawn_points":[[21,53],[21,52],[21,51]]}}
+- draw: {"cells":[[21,53],[21,52],[21,51]]}
+- erase: {"cells":[[21,53],[21,52]]}
+- undo: {}
+- reset: {}
 - do_nothing: {"reason":"No valid high-value move this turn."}
 
 Output strictness:

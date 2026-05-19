@@ -175,7 +175,10 @@ agents:
     role: "follower"
     model: { provider: "local", name: "dummy", temperature: 0.0 }
 action_space:
-  enabled: ["message", "update_map_progress"]
+  enabled: ["message", "draw", "erase", "undo", "reset", "do_nothing"]
+  enabled_by_role:
+    guider: ["message", "do_nothing"]
+    follower: ["message", "draw", "erase", "undo", "reset", "do_nothing"]
 controls: {}
 task:
   type: "maptask"

@@ -22,17 +22,17 @@ class HiddenProfileStatusUpdateTests(unittest.TestCase):
                 }
             },
             visible_events=[],
-            step_index=88,
+            step_index=90,
             game_status={
                 "hidden_profile_phase": "final",
                 "hidden_profile_final_vote_submitted": True,
                 "hidden_profile_initial_vote_submitted": True,
-                "hidden_profile_initial_vote_step_range": "1-3",
-                "hidden_profile_discussion_step_range": "4-87",
-                "hidden_profile_final_vote_step_range": "88-90",
+                "hidden_profile_initial_vote_step_range": "1-1",
+                "hidden_profile_discussion_step_range": "2-89",
+                "hidden_profile_final_vote_step_range": "90-90",
                 "max_steps": 90,
                 "remaining_steps": 78,
-                "step_index": 88,
+                "step_index": 90,
             },
         )
         text = format_agent_status_update("A", obs)
@@ -53,9 +53,9 @@ class HiddenProfileStatusUpdateTests(unittest.TestCase):
             step_index=5,
             game_status={
                 "hidden_profile_phase": "discussion",
-                "hidden_profile_initial_vote_step_range": "1-3",
-                "hidden_profile_discussion_step_range": "4-87",
-                "hidden_profile_final_vote_step_range": "88-90",
+                "hidden_profile_initial_vote_step_range": "1-1",
+                "hidden_profile_discussion_step_range": "2-89",
+                "hidden_profile_final_vote_step_range": "90-90",
                 "step_index": 10,
                 "max_steps": 90,
             },

@@ -166,7 +166,7 @@ class DeterministicReplayTests(unittest.TestCase):
     def test_maptask_action_replay_stability(self) -> None:
         config = _task_config(
             "maptask",
-            enabled_actions=["update_map_progress"],
+            enabled_actions=["draw"],
             task_fields={
                 "target_steps": 3,
                 "roles": {"A": "follower", "B": "guider"},
@@ -175,17 +175,14 @@ class DeterministicReplayTests(unittest.TestCase):
         )
         controller_a = build_controller(_base_state(), config=config)
         controller_b = build_controller(_base_state(), config=config)
-        progress_action = {
-            "type": "update_map_progress",
+        draw_action = {
+            "type": "draw",
             "actor_id": "A",
             "timestamp": 1,
-            "payload": {
-                "map_progress": {"note": "replay_test"},
-                "drawn_points": [[0, 1]],
-            },
+            "payload": {"cells": [[0, 1]]},
         }
-        controller_a.state.pending_actions.append(copy.deepcopy(progress_action))
-        controller_b.state.pending_actions.append(copy.deepcopy(progress_action))
+        controller_a.state.pending_actions.append(copy.deepcopy(draw_action))
+        controller_b.state.pending_actions.append(copy.deepcopy(draw_action))
         controller_a.step()
         controller_b.step()
         log_a = [_normalize_event(event) for event in controller_a.state.event_log]
@@ -193,7 +190,6 @@ class DeterministicReplayTests(unittest.TestCase):
         self.assertEqual(log_a, log_b)
         progress = controller_a.state.task_state["participants"]["A"]["map_progress"]
         self.assertEqual(progress.get("last_drawn_points"), [[0, 1]])
-        self.assertEqual(progress.get("note"), "replay_test")
 
 
 class MapTaskCanvasVisibilityTests(unittest.TestCase):
@@ -206,7 +202,7 @@ class MapTaskCanvasVisibilityTests(unittest.TestCase):
                 {"id": "A", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
                 {"id": "B", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
             ],
-            "action_space": {"enabled": ["update_map_progress"]},
+            "action_space": {"enabled": ["draw"]},
             "controls": {},
             "task": {
                 "type": "maptask",
@@ -220,16 +216,13 @@ class MapTaskCanvasVisibilityTests(unittest.TestCase):
             "logging": {"trace_schema_version": "v0"},
         }
         controller = build_controller(_base_state(), config=config)
-        progress_action = {
-            "type": "update_map_progress",
+        draw_action = {
+            "type": "draw",
             "actor_id": "A",
             "timestamp": 1,
-            "payload": {
-                "map_progress": {"note": "step1"},
-                "drawn_points": [[0, 1]],
-            },
+            "payload": {"cells": [[0, 1]]},
         }
-        controller.state.pending_actions.append(copy.deepcopy(progress_action))
+        controller.state.pending_actions.append(copy.deepcopy(draw_action))
         controller.step()
         guider_obs = controller._build_observation_for_agent("B")
         follower_obs = controller._build_observation_for_agent("A")
@@ -251,7 +244,7 @@ class MapTaskCanvasVisibilityTests(unittest.TestCase):
                 {"id": "A", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
                 {"id": "B", "role": "tester", "model": {"provider": "local", "name": "dummy"}},
             ],
-            "action_space": {"enabled": ["update_map_progress"]},
+            "action_space": {"enabled": ["draw"]},
             "controls": {},
             "task": {
                 "type": "maptask",
@@ -264,16 +257,13 @@ class MapTaskCanvasVisibilityTests(unittest.TestCase):
             "logging": {"trace_schema_version": "v0"},
         }
         controller = build_controller(_base_state(), config=config)
-        progress_action = {
-            "type": "update_map_progress",
+        draw_action = {
+            "type": "draw",
             "actor_id": "A",
             "timestamp": 1,
-            "payload": {
-                "map_progress": {"note": "step1"},
-                "drawn_points": [[0, 1]],
-            },
+            "payload": {"cells": [[0, 1]]},
         }
-        controller.state.pending_actions.append(copy.deepcopy(progress_action))
+        controller.state.pending_actions.append(copy.deepcopy(draw_action))
         controller.step()
         guider_obs = controller._build_observation_for_agent("B")
         types_g = [e.get("event_type") for e in guider_obs.visible_events]

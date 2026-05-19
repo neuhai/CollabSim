@@ -41,8 +41,8 @@ task:
   phase_rules:
     initial_vote_decision_id: "initial_vote"
     final_vote_decision_id: "final_vote"
-    initial_vote_steps: 3
-    final_vote_steps: 3
+    initial_vote_steps: 1
+    final_vote_steps: 1
     discussion_action_types: ["message"]
     discussion_duration_sec: 300
     correct_answer: "Candidate C"
