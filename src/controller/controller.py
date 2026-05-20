@@ -1889,16 +1889,9 @@ class ExperimentController:
                 pairs.append(pair)
         return pairs
 
-    def _self_probe_questions(self) -> list[str]:
-        return [
-            "What immediate goal is other agents pursuing with respect to you?",
-            "What relevant information do you believe  other agents currently knows?",
-            "What action do you expect  other agents to take next?",
-        ]
-
     def _log_self_probe_records(self, actor_id: str) -> list[dict[str, Any]]:
         template_id, construct, _ = self._next_probe_template()
-        questions = self._self_probe_questions()
+        questions = self._probe_questions(fallback_prompt=None)
         records: list[dict[str, Any]] = []
         for question in questions:
             record: dict[str, Any] = {
