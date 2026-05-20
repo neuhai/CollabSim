@@ -2,7 +2,7 @@
 experiment:
   id: "study_sf_awareness_dashboard"
   seed: 42
-  duration_sec: 300
+  duration_sec: 900
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -62,8 +62,8 @@ task:
 protocol:
   turn_taking: "simultaneous"
   step_mode: "time"
-  agent_trigger_interval_sec: 20
-  produce_shape_delay_sec: 10
+  agent_trigger_interval_sec: 10
+  produce_shape_delay_sec: 30
   termination:
     condition: "time_elapsed"
     noop_consecutive_cycles: 3

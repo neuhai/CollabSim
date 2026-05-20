@@ -310,11 +310,26 @@ def _apply_trade_response(
     completed = task_state.setdefault("completed_trades", [])
     if isinstance(completed, list):
         completed.append(dict(offer))
+    # Include offer economics on the event so downstream metrics (e.g. analysis/task_metrics)
+    # can attribute prices without re-scanning prior trade_offer_created events.
+    respond_payload: dict[str, Any] = {
+        "transaction_id": transaction_id,
+        "response_type": response_type,
+    }
+    frm = offer.get("from")
+    if isinstance(frm, str) and frm:
+        respond_payload["initiator_id"] = frm
+    to_id = offer.get("to")
+    if isinstance(to_id, str) and to_id:
+        respond_payload["target_id"] = to_id
+    ppu = offer.get("price_per_unit")
+    if isinstance(ppu, (int, float)):
+        respond_payload["price_per_unit"] = float(ppu)
     emit_event(
         event_type="trade_offer_responded",
         actor_id=actor_id,
         visibility="public",
-        payload={"transaction_id": transaction_id, "response_type": response_type},
+        payload=respond_payload,
     )
     return True
 

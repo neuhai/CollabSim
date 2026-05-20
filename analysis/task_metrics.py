@@ -84,6 +84,73 @@ def _daytrader_run_investment_aggregates(
     }
 
 
+def _fulfilled_slots_from_order_fulfilled_events(events: list[dict[str, Any]]) -> dict[str, int]:
+    """Sum fulfilled_count from order_fulfilled events per actor."""
+    out: dict[str, int] = defaultdict(int)
+    for e in events:
+        if e.get("event_type") != "order_fulfilled":
+            continue
+        aid = e.get("actor_id")
+        fc = (e.get("payload") or {}).get("fulfilled_count")
+        if isinstance(aid, str) and isinstance(fc, (int, float)):
+            out[aid] += int(fc)
+    return dict(out)
+
+
+def _last_order_progress_from_shapefactory_observations(
+    trace: Trace, agent_ids: list[str],
+) -> dict[str, int]:
+    """Recover order_progress from the latest shapefactory observation snapshot."""
+    found: dict[str, int] = {}
+    for e in reversed(trace.events):
+        if e.get("event_type") != "observation_built":
+            continue
+        payload = e.get("payload") or {}
+        obs = payload.get("observation") or {}
+        state = obs.get("state") or {}
+        task_state = state.get("task_state") or {}
+        if task_state.get("task_type") != "shapefactory":
+            continue
+        participants = task_state.get("participants") or {}
+        if not isinstance(participants, dict):
+            continue
+        for aid in agent_ids:
+            if aid in found:
+                continue
+            info = participants.get(aid)
+            if isinstance(info, dict):
+                op = info.get("order_progress")
+                if isinstance(op, (int, float)):
+                    found[aid] = int(op)
+        if len(found) >= len(agent_ids):
+            break
+    return found
+
+
+def _shapefactory_fulfilled_slots_by_agent(
+    trace: Trace,
+    agent_ids: list[str],
+    summary_per_agent: dict[str, Any],
+) -> dict[str, int]:
+    """Per-agent own order slots fulfilled (prefers run_summary, else last obs, else events)."""
+    from_events = _fulfilled_slots_from_order_fulfilled_events(trace.events)
+    from_obs = _last_order_progress_from_shapefactory_observations(trace, agent_ids)
+    out: dict[str, int] = {}
+    for aid in agent_ids:
+        val: int | None = None
+        sdata = summary_per_agent.get(aid)
+        if isinstance(sdata, dict):
+            op = sdata.get("order_progress")
+            if isinstance(op, (int, float)):
+                val = int(op)
+        if val is None and aid in from_obs:
+            val = from_obs[aid]
+        if val is None:
+            val = int(from_events.get(aid, 0))
+        out[aid] = val
+    return out
+
+
 # ------------------------------------------------------------------ #
 # ShapeFactory
 # ------------------------------------------------------------------ #
@@ -93,9 +160,12 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
     Key metrics (mirrors collaborator's log_analysis.py):
       per-agent : final_wealth, wealth_gain, successful_trades,
                   avg_trade_price, min_trade_price, max_trade_price,
-                  messages_sent, avg_message_length_words, trade_efficiency
+                  messages_sent, avg_message_length_words, trade_efficiency,
+                  fulfilled_order_slots, order_fully_fulfilled
       per-run   : total_successful_trades, trade_accept_rate,
-                  avg_trade_price, session_avg_wealth, wealth_gini
+                  avg_trade_price, session_avg_wealth, wealth_gini,
+                  agents_fully_fulfilled_own_order_count,
+                  avg/min/max_fulfilled_order_slots_per_agent
     """
     per_agent: dict[str, dict[str, float]] = defaultdict(dict)
     per_run: dict[str, float] = {}
@@ -103,6 +173,10 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
     # Starting money from manifest config
     task_cfg = (trace.manifest.get("config") or {}).get("task") or {}
     starting_money = float(task_cfg.get("starting_money", 200.0))
+    try:
+        shapes_order_target = int(max(int(task_cfg.get("shapes_order", 4)), 1))
+    except (TypeError, ValueError):
+        shapes_order_target = 4
 
     # Trade events
     trade_created = trace.events_of_type("trade_offer_created")
@@ -179,6 +253,19 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
         gini = sum(abs(s[i] - s[j]) for i in range(n) for j in range(n)) / (2 * n * sum(s))
         per_run["wealth_gini"] = gini
 
+    fulfilled_slots_by_agent = _shapefactory_fulfilled_slots_by_agent(
+        trace, trace.agent_ids, summary_per_agent,
+    )
+    slot_counts = [float(fulfilled_slots_by_agent.get(aid, 0)) for aid in trace.agent_ids]
+    full_count = sum(
+        1 for aid in trace.agent_ids
+        if fulfilled_slots_by_agent.get(aid, 0) >= shapes_order_target
+    )
+    per_run["agents_fully_fulfilled_own_order_count"] = float(full_count)
+    per_run["avg_fulfilled_order_slots_per_agent"] = _mean(slot_counts) or 0.0
+    per_run["min_fulfilled_order_slots_per_agent"] = min(slot_counts) if slot_counts else 0.0
+    per_run["max_fulfilled_order_slots_per_agent"] = max(slot_counts) if slot_counts else 0.0
+
     msg_stats = _message_stats(trace.events)
     per_run["messages_sent_total"] = msg_stats["messages_sent"]
     per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
@@ -201,6 +288,7 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
         prices = trade_prices_by_agent.get(aid, [])
         msgs = _message_stats(trace.events, aid)
         msg_count = msgs["messages_sent"]
+        fulfilled_sl = float(fulfilled_slots_by_agent.get(aid, 0))
         agent_data: dict[str, float] = {
             "final_wealth": wealth,
             "wealth_gain": wealth - starting_money,
@@ -211,6 +299,8 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
             "messages_sent": msg_count,
             "avg_message_length_tokens": msgs["avg_message_length_tokens"] or 0.0,
             "trade_efficiency": float(trades) / msg_count if msg_count > 0 else 0.0,
+            "fulfilled_order_slots": fulfilled_sl,
+            "order_fully_fulfilled": 1.0 if fulfilled_sl >= float(shapes_order_target) else 0.0,
         }
         for action_type, count in action_counts_by_agent.get(aid, {}).items():
             agent_data[f"action_{action_type}_count"] = float(count)

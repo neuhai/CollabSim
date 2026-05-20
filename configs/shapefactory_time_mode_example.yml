@@ -78,8 +78,8 @@ task:
 protocol:
   turn_taking: "simultaneous"
   step_mode: "time"
-  agent_trigger_interval_sec: 20
-  produce_shape_delay_sec: 10
+  agent_trigger_interval_sec: 10
+  produce_shape_delay_sec: 30
   termination:
     condition: "time_elapsed"
     noop_consecutive_cycles: 3
