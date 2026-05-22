@@ -92,6 +92,12 @@ class SGLangAgent:
             self._max_retries = 6
         self._llm_action_invocation = 0
         self._llm_probe_invocation = 0
+        if not self._host:
+            raise ValueError(
+                "SGLANG_HOST is empty. Set SGLANG_HOST=127.0.0.1 (and SGLANG_PORT) in "
+                "CollabSimExp/.env, then run from the repo root. If a parent shell exported "
+                "an empty SGLANG_HOST, run: unset SGLANG_HOST && set -a && source .env && set +a"
+            )
         init_llm_chat_thread(self)
     def _base_url(self) -> str:
         return f"http://{self._host}:{self._port}"
@@ -258,7 +264,8 @@ class SGLangAgent:
                         await asyncio.sleep(min(60.0, 1.0 * (2 ** attempt)))
                         continue
                     raise RuntimeError(
-                        f"SGLang connection failed after {self._max_retries} attempts: {exc}"
+                        f"SGLang connection failed after {self._max_retries} attempts "
+                        f"(url={url!r}, host={self._host!r}, port={self._port}): {exc}"
                     ) from exc
         raise RuntimeError("SGLang: exhausted retries without returning a response.")
 
