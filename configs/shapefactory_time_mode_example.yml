@@ -15,26 +15,12 @@ prompts:
   persona_profiles: "prompts/persona_profiles.json"
 
 agents:
-  - id: "A"
-    model:
-      provider: "azure"
-      name: "gpt-5.4"
-      temperature: 0.0
-  - id: "B"
-    model:
-      provider: "azure"
-      name: "gpt-5.4"
-      temperature: 0.0
-  - id: "C"
-    model:
-      provider: "azure"
-      name: "gpt-5.4"
-      temperature: 0.0
-  - id: "D"
-    model:
-      provider: "azure"
-      name: "gpt-5.4"
-      temperature: 0.0
+  - {id: "A", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "B", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "C", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "D", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "E", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "F", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
 
 action_space:
   enabled:
@@ -50,7 +36,7 @@ action_space:
 
 controls:
   communication:
-    mode: "broadcast"
+    mode: "direct"
 
 # Keep task semantics unchanged. Controller now applies per-action durations from protocol.action_durations_ms.
 task:
@@ -74,6 +60,8 @@ task:
     B: "square"
     C: "triangle"
     D: "circle"
+    E: "square"
+    F: "triangle"
 
 protocol:
   turn_taking: "simultaneous"
@@ -83,7 +71,7 @@ protocol:
   termination:
     condition: "time_elapsed"
     noop_consecutive_cycles: 3
-  max_concurrent_requests: 4
+  max_concurrent_requests: 6
 
 probe:
   cadence: "per_agent_n_actions"

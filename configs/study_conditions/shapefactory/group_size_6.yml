@@ -1,5 +1,5 @@
 experiment:
-  id: "study_sf_group_10"
+  id: "study_sf_group_6"
   seed: 42
   duration_sec: 900
 
@@ -21,10 +21,6 @@ agents:
   - {id: "D", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
   - {id: "E", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
   - {id: "F", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "G", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "H", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "I", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "J", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
 
 action_space:
   enabled:
@@ -36,7 +32,6 @@ action_space:
     - "fulfill_order"
     - "do_nothing"
 
-# Private chat only (direct channel; no broadcast).
 controls:
   communication:
     mode: "direct"
@@ -50,21 +45,17 @@ task:
   min_trade_price: 15
   max_trade_price: 100
   incentive_money: 60
-  max_production_num: 6
-  shapes_order: 8
-  shapes_types: 5
-  shape_options: ["circle", "square", "triangle", "rectangle", "diamond"]
+  max_production_num: 3
+  shapes_order: 4
+  shapes_types: 3
+  shape_options: ["circle", "square", "triangle"]
   specialties:
     A: "circle"
     B: "square"
     C: "triangle"
-    D: "rectangle"
-    E: "diamond"
-    F: "circle"
-    G: "square"
-    H: "triangle"
-    I: "rectangle"
-    J: "diamond"
+    D: "circle"
+    E: "square"
+    F: "triangle"
 
 protocol:
   turn_taking: "simultaneous"
@@ -74,7 +65,7 @@ protocol:
   termination:
     condition: "time_elapsed"
     noop_consecutive_cycles: 3
-  max_concurrent_requests: 10
+  max_concurrent_requests: 6
 
 probe:
   cadence: "per_agent_n_actions"
@@ -84,5 +75,5 @@ probe:
 
 logging:
   trace_schema_version: "v0"
-  output_dir: "experiments/study_conditions/shapefactory/group_size_10"
+  output_dir: "experiments/study_conditions/shapefactory/group_size_6"
   observation_events: true

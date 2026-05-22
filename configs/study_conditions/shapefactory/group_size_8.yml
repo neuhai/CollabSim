@@ -34,6 +34,7 @@ action_space:
     - "fulfill_order"
     - "do_nothing"
 
+# Private chat only (direct channel; no broadcast).
 controls:
   communication:
     mode: "direct"
