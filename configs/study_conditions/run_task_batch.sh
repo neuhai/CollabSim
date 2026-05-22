@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Batch-run all *.yml conditions for one study task.
+# Batch-run all *.yml conditions for one study task, or all four tasks at once.
 #
 # Usage:
-#   run_task_batch.sh <task> [smoke|one-turn|check] [--collaboration [true]] [--jobs N] [--force]
+#   run_task_batch.sh <task|all> [smoke|one-turn|check] [--collaboration [true]] [--jobs N] [--force]
 #
 # Features:
 #   - Skips conditions that already have results (resume-friendly); use --force to re-run all.
@@ -10,13 +10,14 @@
 #   - --collaboration: append prompts/collaboration_module.md to each agent's initial prompt.
 #
 # Examples:
-#   ./configs/study_conditions/shapefactory/run.sh
-#   ./configs/study_conditions/shapefactory/run.sh smoke --collaboration
+#   ./configs/study_conditions/run_task_batch.sh all
+#   ./configs/study_conditions/run_task_batch.sh shapefactory
+#   ./configs/study_conditions/run_task_batch.sh all smoke --collaboration
 #   ./configs/study_conditions/shapefactory/run.sh --jobs 4 --collaboration true
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <task> [smoke] [--collaboration [true]] [--jobs N] [--force]" >&2
+  echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force]" >&2
   exit 2
 fi
 
@@ -79,11 +80,38 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 <task> [smoke] [--collaboration [true]] [--jobs N] [--force]" >&2
+      echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force]" >&2
       exit 2
       ;;
   esac
 done
+
+if [[ "$TASK" == "all" ]]; then
+  SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  ALL_TASKS=(shapefactory daytrader hidden_profile maptask)
+  ALL_ARGS=()
+  if [[ "$MODE" == "smoke" ]]; then
+    ALL_ARGS+=(smoke)
+  fi
+  if [[ "$COLLABORATION" == true ]]; then
+    ALL_ARGS+=(--collaboration)
+  fi
+  if [[ "$FORCE" == true ]]; then
+    ALL_ARGS+=(--force)
+  fi
+  if [[ "$JOBS" -gt 0 ]]; then
+    ALL_ARGS+=(--jobs "$JOBS")
+  fi
+
+  failures=0
+  for task in "${ALL_TASKS[@]}"; do
+    echo "======== ${task} ========"
+    if ! bash "$SCRIPT" "$task" "${ALL_ARGS[@]}"; then
+      failures=$((failures + 1))
+    fi
+  done
+  exit "$failures"
+fi
 
 if [[ "$COLLABORATION" == true ]]; then
   CLI_EXTRA+=(--collaboration)

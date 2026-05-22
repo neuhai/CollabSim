@@ -40,34 +40,16 @@ uv run python -m src.cli configs/study_conditions/shapefactory/baseline.yml --pr
 
 ## Experiments (4)
 
-### 1) ShapeFactory
+Run all study conditions for all four tasks (parallel within each task; skips conditions that already have results):
 
 ```bash
-uv run python -m src.cli configs/shapefactory_time_mode_example.yml --print-actions
+./configs/study_conditions/run_task_batch.sh all
 ```
 
-### 2) MapTask
-
-Formal run:
+Quick smoke (10 steps per condition):
 
 ```bash
-uv run python -m src.cli configs/maptask_example.yml --print-actions
+./configs/study_conditions/run_task_batch.sh all smoke
 ```
 
-Debug run:
-
-```bash
-uv run python -m src.cli configs/maptask_example.yml --max-steps 3 --dry-run --print-actions
-```
-
-### 3) DayTrader
-
-```bash
-uv run python -m src.cli configs/daytrader_example.yml --print-actions
-```
-
-### 4) Hidden Profile
-
-```bash
-uv run python -m src.cli configs/hidden_profile_azure.yml --print-actions
-```
+Optional flags: `--collaboration [true]`, `--jobs N`, `--force`.

@@ -40,6 +40,7 @@
 <ACTION PLANNING AND RESPONSES>
 - Plan strategically using current state, past events, and pending offers.
 - Choose exactly one action each response.
+- Your goal is to fulfill all your orders while maximizing your individual earning. Therefore, you need to strategically with other participants.
 - If no high-value move is available, you may return `do_nothing`.
 
 <INSTRUCTIONS ON GENERATING VALID ACTIONS>
