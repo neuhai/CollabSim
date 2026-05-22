@@ -36,6 +36,14 @@ from src.utils.env import load_env_file
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
+def _env_or_default(key: str, default: str) -> str:
+    raw = os.environ.get(key)
+    if raw is None:
+        return default
+    stripped = raw.strip()
+    return stripped if stripped else default
+
+
 @dataclass
 class SGLangAgent:
     """Agent that calls a local SGLang inference server."""
@@ -63,9 +71,13 @@ class SGLangAgent:
 
     def __post_init__(self) -> None:
         load_env_file()
-        env_host = os.environ.get("SGLANG_HOST", "localhost")
-        env_port_raw = os.environ.get("SGLANG_PORT", "30000")
-        self._host = self.sglang_host.strip() if isinstance(self.sglang_host, str) and self.sglang_host.strip() else env_host
+        env_host = _env_or_default("SGLANG_HOST", "localhost")
+        env_port_raw = _env_or_default("SGLANG_PORT", "30000")
+        self._host = (
+            self.sglang_host.strip()
+            if isinstance(self.sglang_host, str) and self.sglang_host.strip()
+            else env_host
+        )
         if self.sglang_port is not None:
             self._port = int(self.sglang_port)
         else:

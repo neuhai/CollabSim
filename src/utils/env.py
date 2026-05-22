@@ -9,7 +9,8 @@ import os
 def load_env_file(path: str = ".env") -> None:
     """Load key=value pairs from a .env file into os.environ.
 
-    Existing environment variables are not overwritten.
+    Existing non-empty environment variables are not overwritten.
+    Empty or whitespace-only values may be replaced from the file.
     """
 
     env_path = Path(path)
@@ -21,7 +22,10 @@ def load_env_file(path: str = ".env") -> None:
             continue
         key, value = stripped.split("=", 1)
         key = key.strip()
-        if not key or key in os.environ:
+        if not key:
+            continue
+        existing = os.environ.get(key)
+        if existing is not None and existing.strip():
             continue
         os.environ[key] = value.strip()
 
