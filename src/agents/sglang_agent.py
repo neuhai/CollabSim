@@ -230,7 +230,7 @@ class SGLangAgent:
     # ------------------------------------------------------------------
 
     async def _call_sglang_async(self, messages: list[dict[str, str]]) -> str:
-        url = f"{self._base_url}/v1/chat/completions"
+        url = f"{self._base_url()}/v1/chat/completions"
         payload: dict[str, Any] = {
             "model": self.metadata.model_name,
             "messages": messages,
