@@ -3523,6 +3523,8 @@ class ExperimentController:
                 return "You cannot send a direct message to yourself."
             if len(set(recipients)) != len(recipients):
                 return "message.recipients must not contain duplicates."
+            if len(recipients) > 1:
+                return "Direct messages can only have one recipient. Use broadcast channel for group messages."
         if channel == "broadcast":
             recipients = payload.get("recipients")
             if recipients is not None:
