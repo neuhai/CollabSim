@@ -52,4 +52,14 @@ Quick smoke (10 steps per condition):
 ./configs/study_conditions/run_task_batch.sh all smoke
 ```
 
-Optional flags: `--collaboration [true]` (writes results to `<condition>_collab` folders), `--jobs N`, `--force`.
+Optional flags: `--collaboration [true]` (writes results to `<condition>_collab` folders), `--jobs N`, `--force`, `--retry-failed`, `--list-failed`, `--no-wandb-upload`.
+
+After a batch finishes, results under `experiments/study_conditions/` are uploaded to W&B as a directory artifact (project `collabsim` by default, override with `WANDB_PROJECT`). Each condition still logs its own W&B run during execution; the batch upload adds one folder artifact for the whole task (or all tasks when using `all`).
+
+```bash
+# Re-run only incomplete / failed conditions (ignores partial actions.jsonl)
+./configs/study_conditions/run_task_batch.sh all --retry-failed
+
+# List incomplete conditions without running
+./configs/study_conditions/run_task_batch.sh all --list-failed
+```

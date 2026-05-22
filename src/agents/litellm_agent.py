@@ -1,12 +1,14 @@
 """LiteLLM-backed agent: routes chat completions via the litellm library.
 
 Supports any LiteLLM-recognized ``model.name`` string (OpenAI, Azure, Anthropic,
-local OpenAI-compatible endpoints, proxies, etc.). Credentials are read from the
-usual provider env vars and/or optional ``OPENAI_API_KEY`` / LiteLLM env.
+Bedrock, local OpenAI-compatible endpoints, proxies, etc.). Credentials are read
+from the usual provider env vars and/or optional ``OPENAI_API_KEY`` / LiteLLM env.
+Bedrock (``bedrock/...`` models) requires ``boto3`` and AWS credentials.
 
 Environment (optional overrides):
     LITELLM_API_BASE  - forwarded as ``api_base`` when ``model.api_base`` is unset
     LITELLM_API_KEY   - forwarded as ``api_key`` when unset in config
+    AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION_NAME - Bedrock auth
 
 Config YAML (per agent, under ``model``):
     provider: litellm

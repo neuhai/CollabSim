@@ -2,23 +2,27 @@
 # Batch-run all *.yml conditions for one study task, or all four tasks at once.
 #
 # Usage:
-#   run_task_batch.sh <task|all> [smoke|one-turn|check] [--collaboration [true]] [--jobs N] [--force]
+#   run_task_batch.sh <task|all> [smoke|one-turn|check] [--collaboration [true]] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]
 #
 # Features:
 #   - Skips conditions that already have results (resume-friendly); use --force to re-run all.
+#   - --retry-failed: re-run incomplete conditions even if partial actions.jsonl exists.
+#   - --list-failed: print incomplete conditions and exit (no runs).
 #   - Runs pending conditions in parallel (--jobs N, default: all conditions at once).
+#   - After the batch finishes, uploads results to W&B as a directory artifact (disable with --no-wandb-upload).
 #   - --collaboration: append prompts/collaboration_module.md to each agent's initial prompt;
 #     results are written under <condition>_collab output folders.
 #
 # Examples:
 #   ./configs/study_conditions/run_task_batch.sh all
-#   ./configs/study_conditions/run_task_batch.sh shapefactory
+#   ./configs/study_conditions/run_task_batch.sh shapefactory --retry-failed
+#   ./configs/study_conditions/run_task_batch.sh all --list-failed
 #   ./configs/study_conditions/run_task_batch.sh all smoke --collaboration
 #   ./configs/study_conditions/shapefactory/run.sh --jobs 4 --collaboration true
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force]" >&2
+  echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]" >&2
   exit 2
 fi
 
@@ -27,6 +31,7 @@ shift
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+HELPERS="$ROOT/configs/study_conditions/batch_helpers.py"
 
 if [[ -f .env ]]; then
   set -a
@@ -39,7 +44,11 @@ CLI_EXTRA=()
 MODE="full"
 COLLABORATION=false
 FORCE=false
+RETRY_FAILED=false
+LIST_FAILED=false
+WANDB_UPLOAD=true
 JOBS="${COLLABSIM_BATCH_JOBS:-0}"
+WANDB_PROJECT="${WANDB_PROJECT:-collabsim}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -79,13 +88,77 @@ while [[ $# -gt 0 ]]; do
       FORCE=true
       shift
       ;;
+    --retry-failed)
+      RETRY_FAILED=true
+      shift
+      ;;
+    --list-failed)
+      LIST_FAILED=true
+      shift
+      ;;
+    --no-wandb-upload)
+      WANDB_UPLOAD=false
+      shift
+      ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force]" >&2
+      echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]" >&2
       exit 2
       ;;
   esac
 done
+
+list_failed_for_task() {
+  local task="$1"
+  local collab_flag=()
+  if [[ "$COLLABORATION" == true ]]; then
+    collab_flag=(--collaboration)
+  fi
+  uv run python "$HELPERS" list_failed --root "$ROOT" --task "$task" "${collab_flag[@]}"
+}
+
+upload_batch_results_to_wandb() {
+  local upload_path="$1"
+  local artifact_name="$2"
+  local run_name="$3"
+  local metadata_json="$4"
+
+  if [[ "$WANDB_UPLOAD" != true ]]; then
+    return 0
+  fi
+  if [[ ! -d "$upload_path" ]]; then
+    echo "wandb_upload_skip missing_path=${upload_path}" | tee -a "${BATCH_LOG:-/dev/stderr}"
+    return 0
+  fi
+
+  echo "wandb_upload_start path=${upload_path} artifact=${artifact_name} run=${run_name}" | tee -a "${BATCH_LOG:-/dev/stderr}"
+  set +e
+  uv run python "$HELPERS" upload_wandb \
+    --path "$upload_path" \
+    --project "$WANDB_PROJECT" \
+    --run-name "$run_name" \
+    --artifact-name "$artifact_name" \
+    --metadata-json "$metadata_json" 2>&1 | tee -a "${BATCH_LOG:-/dev/stderr}"
+  local upload_status="${PIPESTATUS[0]}"
+  set -e
+  if [[ "$upload_status" -ne 0 ]]; then
+    echo "wandb_upload_failed exit=${upload_status}" | tee -a "${BATCH_LOG:-/dev/stderr}"
+    return "$upload_status"
+  fi
+  return 0
+}
+
+if [[ "$LIST_FAILED" == true ]]; then
+  if [[ "$TASK" == "all" ]]; then
+    for task in shapefactory daytrader hidden_profile maptask; do
+      echo "======== ${task} ========"
+      list_failed_for_task "$task" || true
+    done
+  else
+    list_failed_for_task "$TASK"
+  fi
+  exit 0
+fi
 
 if [[ "$TASK" == "all" ]]; then
   SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -100,17 +173,47 @@ if [[ "$TASK" == "all" ]]; then
   if [[ "$FORCE" == true ]]; then
     ALL_ARGS+=(--force)
   fi
+  if [[ "$RETRY_FAILED" == true ]]; then
+    ALL_ARGS+=(--retry-failed)
+  fi
+  # Per-task uploads are disabled; the all-tasks batch uploads once at the end.
+  ALL_ARGS+=(--no-wandb-upload)
   if [[ "$JOBS" -gt 0 ]]; then
     ALL_ARGS+=(--jobs "$JOBS")
   fi
 
+  ALL_STAMP="$(date +%Y%m%d_%H%M%S)"
+  if [[ "$MODE" == "smoke" ]]; then
+    ALL_STAMP="${ALL_STAMP}_smoke10step"
+  fi
+  ALL_BATCH_LOG="$ROOT/experiments/study_conditions/_batch_all_${ALL_STAMP}.log"
+
   failures=0
   for task in "${ALL_TASKS[@]}"; do
     echo "======== ${task} ========"
-    if ! bash "$SCRIPT" "$task" "${ALL_ARGS[@]}"; then
+    if ! BATCH_LOG="$ALL_BATCH_LOG" bash "$SCRIPT" "$task" "${ALL_ARGS[@]}"; then
       failures=$((failures + 1))
     fi
   done
+
+  metadata_json="$(python3 - <<PY
+import json
+print(json.dumps({
+    "batch_stamp": "${ALL_STAMP}",
+    "task": "all",
+    "mode": "${MODE}",
+    "collaboration": "${COLLABORATION}",
+    "task_failures": ${failures},
+}))
+PY
+)"
+  upload_batch_results_to_wandb \
+    "$ROOT/experiments/study_conditions" \
+    "study_conditions_${ALL_STAMP}" \
+    "all_tasks_batch_${ALL_STAMP}" \
+    "$metadata_json" || true
+
+  echo "batch_all_end=${ALL_STAMP} task_failures=${failures} log=${ALL_BATCH_LOG}"
   exit "$failures"
 fi
 
@@ -138,36 +241,14 @@ condition_out_dir() {
   fi
 }
 
-condition_has_results() {
+condition_should_skip() {
   local out_dir="$1"
   local mode="$2"
-  python3 - "$out_dir" "$mode" <<'PY'
-import json
-import os
-import sys
-
-out_dir, mode = sys.argv[1], sys.argv[2]
-summary_path = os.path.join(out_dir, "run_summary.json")
-if not os.path.isfile(summary_path):
-    sys.exit(1)
-try:
-    with open(summary_path, encoding="utf-8") as f:
-        summary = json.load(f)
-except (OSError, json.JSONDecodeError):
-    sys.exit(1)
-run_id = str(summary.get("run_id", ""))
-is_smoke_run = "smoke" in run_id
-if mode == "smoke":
-    sys.exit(0 if is_smoke_run else 1)
-if is_smoke_run:
-    sys.exit(1)
-if summary.get("complete") is True:
-    sys.exit(0)
-actions_path = os.path.join(out_dir, "actions.jsonl")
-if os.path.isfile(actions_path) and os.path.getsize(actions_path) > 64:
-    sys.exit(0)
-sys.exit(1)
-PY
+  local skip_args=(should_skip "$out_dir" "$mode")
+  if [[ "$RETRY_FAILED" == true ]]; then
+    skip_args+=(--retry-failed)
+  fi
+  uv run python "$HELPERS" "${skip_args[@]}"
 }
 
 run_one_condition() {
@@ -193,7 +274,7 @@ run_one_condition() {
     --output-dir "$out" \
     --print-actions \
     --wandb \
-    --wandb-project "collabsim" \
+    --wandb-project "$WANDB_PROJECT" \
     --wandb-run-name "${TASK}_$(basename "$out")_${STAMP}" \
     ${CLI_EXTRA+"${CLI_EXTRA[@]}"} 2>&1 | tee -a "$runlog"
   status="${PIPESTATUS[0]}"
@@ -213,8 +294,10 @@ run_one_condition() {
   echo "mode=${MODE}"
   echo "task=${TASK}"
   echo "collaboration=${COLLABORATION}"
+  echo "retry_failed=${RETRY_FAILED}"
   echo "jobs=${JOBS}"
   echo "force=${FORCE}"
+  echo "wandb_upload=${WANDB_UPLOAD}"
   echo "repo=${ROOT}"
 } | tee "$BATCH_LOG"
 
@@ -231,7 +314,7 @@ skipped=0
 for cfg in "${configs[@]}"; do
   slug="$(basename "$cfg" .yml)"
   out="$(condition_out_dir "$OUT_BASE" "$slug")"
-  if [[ "$FORCE" != true ]] && condition_has_results "$out" "$MODE"; then
+  if [[ "$FORCE" != true ]] && condition_should_skip "$out" "$MODE"; then
     echo "SKIP ${slug} (existing results in ${out})" | tee -a "$BATCH_LOG"
     skipped=$((skipped + 1))
     continue
@@ -242,6 +325,24 @@ done
 
 if [[ ${#pending_cfgs[@]} -eq 0 ]]; then
   echo "batch_end=${STAMP} nothing_to_run skipped=${skipped} log=${BATCH_LOG}"
+  metadata_json="$(python3 - <<PY
+import json
+print(json.dumps({
+    "batch_stamp": "${STAMP}",
+    "task": "${TASK}",
+    "mode": "${MODE}",
+    "collaboration": "${COLLABORATION}",
+    "skipped": ${skipped},
+    "pending": 0,
+    "failures": 0,
+}))
+PY
+)"
+  upload_batch_results_to_wandb \
+    "$OUT_BASE" \
+    "${TASK}_study_conditions_${STAMP}" \
+    "${TASK}_batch_${STAMP}" \
+    "$metadata_json" || true
   exit 0
 fi
 
@@ -275,6 +376,26 @@ for slug in "${pending_slugs[@]}"; do
 done
 
 echo "batch_end=${STAMP} skipped=${skipped} failures=${failures} log=${BATCH_LOG}"
+
+metadata_json="$(python3 - <<PY
+import json
+print(json.dumps({
+    "batch_stamp": "${STAMP}",
+    "task": "${TASK}",
+    "mode": "${MODE}",
+    "collaboration": "${COLLABORATION}",
+    "skipped": ${skipped},
+    "pending": ${#pending_cfgs[@]},
+    "failures": ${failures},
+}))
+PY
+)"
+upload_batch_results_to_wandb \
+  "$OUT_BASE" \
+  "${TASK}_study_conditions_${STAMP}" \
+  "${TASK}_batch_${STAMP}" \
+  "$metadata_json" || true
+
 if [[ "$failures" -gt 0 ]]; then
   exit 1
 fi
