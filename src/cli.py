@@ -145,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = args.output_dir
     if output_dir is None and not args.dry_run:
         output_dir = config.get("logging", {}).get("output_dir")
+    if _collaboration_enabled(config) and output_dir and not args.dry_run:
+        output_dir = _with_collaboration_output_dir(output_dir)
 
     agents = build_agents(config)
     state = ExperimentState(
@@ -344,6 +346,18 @@ def _is_time_mode(config: dict[str, object]) -> bool:
     if not isinstance(protocol, dict):
         return False
     return protocol.get("step_mode") == "time"
+
+
+def _collaboration_enabled(config: dict[str, object]) -> bool:
+    experiment = config.get("experiment")
+    return isinstance(experiment, dict) and experiment.get("collaboration") is True
+
+
+def _with_collaboration_output_dir(output_dir: str) -> str:
+    path = Path(output_dir)
+    if path.name.endswith("_collab"):
+        return output_dir
+    return str(path.parent / f"{path.name}_collab")
 
 
 def _coerce_bool(value: object) -> bool:

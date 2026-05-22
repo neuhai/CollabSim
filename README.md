@@ -52,4 +52,4 @@ Quick smoke (10 steps per condition):
 ./configs/study_conditions/run_task_batch.sh all smoke
 ```
 
-Optional flags: `--collaboration [true]`, `--jobs N`, `--force`.
+Optional flags: `--collaboration [true]` (writes results to `<condition>_collab` folders), `--jobs N`, `--force`.

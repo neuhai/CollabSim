@@ -7,7 +7,8 @@
 # Features:
 #   - Skips conditions that already have results (resume-friendly); use --force to re-run all.
 #   - Runs pending conditions in parallel (--jobs N, default: all conditions at once).
-#   - --collaboration: append prompts/collaboration_module.md to each agent's initial prompt.
+#   - --collaboration: append prompts/collaboration_module.md to each agent's initial prompt;
+#     results are written under <condition>_collab output folders.
 #
 # Examples:
 #   ./configs/study_conditions/run_task_batch.sh all
@@ -127,6 +128,16 @@ CFG_DIR="$ROOT/configs/study_conditions/${TASK}"
 mkdir -p "$OUT_BASE"
 BATCH_LOG="$OUT_BASE/_batch_${STAMP}.log"
 
+condition_out_dir() {
+  local base="$1"
+  local slug="$2"
+  if [[ "$COLLABORATION" == true ]]; then
+    echo "${base}/${slug}_collab"
+  else
+    echo "${base}/${slug}"
+  fi
+}
+
 condition_has_results() {
   local out_dir="$1"
   local mode="$2"
@@ -183,7 +194,7 @@ run_one_condition() {
     --print-actions \
     --wandb \
     --wandb-project "collabsim" \
-    --wandb-run-name "${TASK}_${slug}_${STAMP}" \
+    --wandb-run-name "${TASK}_$(basename "$out")_${STAMP}" \
     ${CLI_EXTRA+"${CLI_EXTRA[@]}"} 2>&1 | tee -a "$runlog"
   status="${PIPESTATUS[0]}"
   set -e
@@ -219,7 +230,7 @@ pending_slugs=()
 skipped=0
 for cfg in "${configs[@]}"; do
   slug="$(basename "$cfg" .yml)"
-  out="${OUT_BASE}/${slug}"
+  out="$(condition_out_dir "$OUT_BASE" "$slug")"
   if [[ "$FORCE" != true ]] && condition_has_results "$out" "$MODE"; then
     echo "SKIP ${slug} (existing results in ${out})" | tee -a "$BATCH_LOG"
     skipped=$((skipped + 1))
@@ -244,7 +255,7 @@ failures=0
 for i in "${!pending_cfgs[@]}"; do
   cfg="${pending_cfgs[$i]}"
   slug="${pending_slugs[$i]}"
-  out="${OUT_BASE}/${slug}"
+  out="$(condition_out_dir "$OUT_BASE" "$slug")"
   runlog="${out}/run_${STAMP}.log"
 
   while (( $(jobs -r 2>/dev/null | wc -l | tr -d ' ') >= JOBS )); do
@@ -256,7 +267,7 @@ done
 wait || true
 
 for slug in "${pending_slugs[@]}"; do
-  out="${OUT_BASE}/${slug}"
+  out="$(condition_out_dir "$OUT_BASE" "$slug")"
   status_file="${out}/.batch_exit_${STAMP}"
   if [[ ! -f "$status_file" ]] || [[ "$(cat "$status_file")" != "0" ]]; then
     failures=$((failures + 1))
