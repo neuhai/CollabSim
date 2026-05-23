@@ -278,7 +278,8 @@ def _maptask_apply_follower_draw_payload(
     if drawn_points:
         me["current_position"] = list(drawn_points[-1])
 
-    me.setdefault("map_draw_batches", []).append([[row, col] for row, col in ordered_added])
+    # Store pre-draw snapshot so undo can restore exactly to this state.
+    me.setdefault("map_draw_batches", []).append([[row, col] for row, col in sorted(existing_points)])
 
     finish_cell = _finish_cell(task_state)
     if isinstance(finish_cell, tuple) and finish_cell in all_points:
@@ -355,10 +356,12 @@ def _maptask_apply_follower_erase(
             )
             return True
 
+    # Store pre-erase snapshot so undo can restore exactly to this state.
+    pre_erase_snapshot = [[row, col] for row, col in sorted(drawn)]
     for p in erase_points:
         drawn.discard(p)
 
-    me["map_draw_batches"] = []
+    me.setdefault("map_draw_batches", []).append(pre_erase_snapshot)
     _rebuild_follower_grid_from_drawn(me, drawn)
     me["drawn_route_points"] = [[row, col] for row, col in sorted(drawn)]
     me["current_position"] = _follower_cursor_after_mutations(me, drawn)
@@ -404,12 +407,10 @@ def _maptask_apply_follower_undo(
             payload={"action": {"type": "undo", "payload": {}}, "error_message": "Nothing to undo."},
         )
         return True
-    batches.pop()
+    previous_snapshot = batches.pop()
     points: set[tuple[int, int]] = set()
-    for batch in batches:
-        if not isinstance(batch, list):
-            continue
-        for item in batch:
+    if isinstance(previous_snapshot, list):
+        for item in previous_snapshot:
             if isinstance(item, (list, tuple)) and len(item) == 2:
                 r, c = item
                 if isinstance(r, int) and isinstance(c, int):

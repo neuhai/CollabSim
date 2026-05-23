@@ -1,13 +1,9 @@
-"""Probe response analysis for grounding and coordination constructs.
+"""Probe response analysis grouped by actual probe constructs.
 
-Probe templates used across all four experiments:
-  grounding_v1    — "State your partner's current intent in one sentence."
-                    structured_fields: partner_intent, beliefs
-    situation_awareness_v1
-                                    — maptask-compatible grounding-like probe family
-                                        (mapped into grounding metrics for backward compatibility)
-  coordination_v1 — "Name the main coordination obstacle right now."
-                    structured_fields: obstacle, next_step
+Probe templates used across experiments include constructs such as:
+    grounding            structured_fields: partner_intent, beliefs
+    situation_awareness  structured_fields: partner_intent, beliefs
+    coordination         structured_fields: obstacle, next_step
 
 For each construct this module computes:
   - mean confidence and its standard deviation over all responses
@@ -70,14 +66,6 @@ def _field_frequencies(probes: list[dict[str, Any]], field: str) -> dict[str, in
     return dict(sorted(counts.items(), key=lambda x: -x[1]))
 
 
-def _probes_of_aliases(trace: Trace, constructs: list[str]) -> list[dict[str, Any]]:
-    """Return probes whose construct is in ``constructs`` preserving log order."""
-    if not constructs:
-        return []
-    allowed = set(constructs)
-    return [p for p in trace.probes if p.get("construct") in allowed]
-
-
 # ------------------------------------------------------------------ #
 # Per-construct analysis
 # ------------------------------------------------------------------ #
@@ -106,35 +94,49 @@ def _analyze_construct(
 
 
 def analyze_probes(trace: Trace) -> dict[str, Any]:
-    """Return probe analysis for grounding-like and coordination constructs.
+    """Return probe analysis grouped by concrete construct names.
 
     Returns a dict with keys:
-      overall.grounding    — run-level grounding metrics
-      overall.coordination — run-level coordination metrics
-      per_agent            — {agent_id: {grounding: …, coordination: …}}
+      overall.<construct> — run-level construct metrics
+      per_agent           — {agent_id: {<construct>: ...}}
     """
-    # Backward compatibility: maptask uses situation_awareness_v1 instead of grounding_v1.
-    grounding_probes = _probes_of_aliases(trace, ["grounding", "situation_awareness"])
-    coordination_probes = trace.probes_of_construct("coordination")
+    structured_keys_by_construct: dict[str, list[str]] = {
+        "grounding": ["partner_intent", "beliefs"],
+        "situation_awareness": ["partner_intent", "beliefs"],
+        "coordination": ["obstacle", "next_step"],
+    }
 
-    overall_grounding = _analyze_construct(grounding_probes, ["partner_intent", "beliefs"])
-    overall_coordination = _analyze_construct(coordination_probes, ["obstacle", "next_step"])
+    constructs = sorted(
+        {
+            c
+            for c in (p.get("construct") for p in trace.probes)
+            if isinstance(c, str) and c.strip()
+        }
+    )
+
+    overall: dict[str, Any] = {}
+    probes_by_construct: dict[str, list[dict[str, Any]]] = {}
+    for construct in constructs:
+        probes = trace.probes_of_construct(construct)
+        probes_by_construct[construct] = probes
+        overall[construct] = _analyze_construct(
+            probes,
+            structured_keys_by_construct.get(construct, []),
+        )
 
     per_agent: dict[str, dict[str, Any]] = {}
     all_ids = {p.get("actor_id") for p in trace.probes if isinstance(p.get("actor_id"), str)}
     for agent_id in sorted(all_ids):
-        ag = [p for p in grounding_probes if p.get("actor_id") == agent_id]
-        ac = [p for p in coordination_probes if p.get("actor_id") == agent_id]
-        per_agent[agent_id] = {
-            "grounding": _analyze_construct(ag, ["partner_intent", "beliefs"]),
-            "coordination": _analyze_construct(ac, ["obstacle", "next_step"]),
-        }
+        per_agent[agent_id] = {}
+        for construct in constructs:
+            agent_probes = [p for p in probes_by_construct[construct] if p.get("actor_id") == agent_id]
+            per_agent[agent_id][construct] = _analyze_construct(
+                agent_probes,
+                structured_keys_by_construct.get(construct, []),
+            )
 
     return {
-        "overall": {
-            "grounding": overall_grounding,
-            "coordination": overall_coordination,
-        },
+        "overall": overall,
         "per_agent": per_agent,
     }
 
@@ -146,7 +148,7 @@ def probe_summary_rows(trace: Trace) -> list[dict[str, Any]]:
     run_id = trace.manifest.get("run_id", str(trace.run_dir.name))
     task_type = trace.task_type or "unknown"
 
-    for construct in ("grounding", "coordination"):
+    for construct in sorted(analysis["overall"].keys()):
         overall = analysis["overall"][construct]
         rows.append({
             "run_id": run_id,

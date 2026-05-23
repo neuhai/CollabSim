@@ -23,7 +23,7 @@ fi
 
 TASK="$1"
 shift
-
+OUT_BASE="${COLLABSIM_OUT_BASE:-$ROOT/experiments/study_conditions/${TASK}}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
