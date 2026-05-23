@@ -64,6 +64,58 @@ class HiddenProfileStatusUpdateTests(unittest.TestCase):
         self.assertIn("DISCUSSION", text)
         self.assertIn("decide / voting is not allowed", text)
 
+    def test_discussion_shows_message_content_in_visible_events(self) -> None:
+        obs = Observation(
+            state={
+                "task_state": {
+                    "task_type": "hidden_profile",
+                    "phase": "discussion",
+                }
+            },
+            visible_events=[
+                {
+                    "event_type": "message_delivered",
+                    "actor_id": "B",
+                    "payload": {
+                        "message_id": "msg_2",
+                        "channel": "broadcast",
+                        "content": "Candidate C handles stress well.",
+                        "content_type": "text",
+                        "recipients": ["A", "C"],
+                    },
+                }
+            ],
+            step_index=3,
+            game_status={"step_index": 3, "max_steps": 90},
+        )
+        text = format_agent_status_update("A", obs)
+        self.assertIn("Candidate C handles stress well", text)
+        self.assertIn("message_delivered", text)
+
+    def test_discussion_shows_full_message_content_not_truncated(self) -> None:
+        long_content = "A" * 120
+        obs = Observation(
+            state={"task_state": {"task_type": "hidden_profile", "phase": "discussion"}},
+            visible_events=[
+                {
+                    "event_type": "message_delivered",
+                    "actor_id": "B",
+                    "payload": {
+                        "message_id": "msg_9",
+                        "channel": "broadcast",
+                        "content": long_content,
+                        "content_type": "text",
+                        "recipients": ["A", "C"],
+                    },
+                }
+            ],
+            step_index=3,
+            game_status={"step_index": 3},
+        )
+        text = format_agent_status_update("A", obs)
+        self.assertIn(long_content, text)
+        self.assertNotIn("...", text)
+
 
 if __name__ == "__main__":
     unittest.main()
