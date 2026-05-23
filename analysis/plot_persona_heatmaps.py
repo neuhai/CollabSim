@@ -1,12 +1,13 @@
-"""Four-panel persona study heatmaps (models x conditions) with YlGnBu styling.
+"""Four-panel persona study heatmaps (models x all study conditions) with YlGnBu styling.
 
-Data layout (default paths under experiments/gpt5.5/):
-  - GPT-5.5  -> study_conditions-persona
-  - Claude   -> claude-persona (2)
-  - Qwen3 / Llama -> set paths when available (rows show as empty until then)
+Conditions and display labels are read from configs/study_conditions/<task>/*.yml:
+  baseline              -> Base
+  *bandwidth*           -> +BW↓
+  awareness_dashboard   -> +Dash
+  canvas_visibility     -> +Canvas
+  group_size_<n>        -> N=<n>
 
-Each cell shows a numeric STD-like metric and an arrow vs that model's baseline
-(single arrow for small change, double for |delta| >= 2 * arrow_threshold).
+Each cell: metric value + arrow vs Base (same model, same task).
 
 Usage:
   uv run python -m analysis.plot_persona_heatmaps
@@ -18,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import statistics
 from pathlib import Path
 from typing import Any, Callable
@@ -29,9 +31,33 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.patches import Rectangle
 
 ROOT = Path(__file__).resolve().parents[1]
+CONFIGS_DIR = ROOT / "configs" / "study_conditions"
 DEFAULT_DATA_ROOT = ROOT / "experiments" / "gpt5.5"
 
 MetricFn = Callable[[dict[str, Any]], float | None]
+
+BASELINE_CONDITION = "baseline"
+ARROW_THRESHOLD = 0.005
+
+# Custom ablation gradient: #ffffd9 (low) → … → #061d58 (high)
+_ABLATION_CMAP_STOPS: list[str] = [
+    "#ffffd9",
+    "#97d5b7",
+    "#40b9c3",
+    "#2493c0",
+    "#24499e",
+    "#061d58",
+]
+
+
+def make_ablation_cmap() -> mcolors.LinearSegmentedColormap:
+    """Smooth yellow–teal–blue gradient for heatmap cells."""
+    return mcolors.LinearSegmentedColormap.from_list(
+        "ablation_yellow_blue",
+        _ABLATION_CMAP_STOPS,
+        N=256,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Metric helpers
@@ -58,72 +84,21 @@ def metric_probe_grounding_std(metrics: dict[str, Any]) -> float | None:
     return _per_run(metrics, "probe_grounding_confidence_std")
 
 
-def metric_probe_coordination_std(metrics: dict[str, Any]) -> float | None:
-    return _per_run(metrics, "probe_coordination_confidence_std")
-
-
 def metric_lang_std(metrics: dict[str, Any]) -> float | None:
     return _agent_stdev(metrics, "avg_message_length_tokens")
 
 
-def metric_task_std(metrics: dict[str, Any]) -> float | None:
-    return _agent_stdev(metrics, "map_progress_updates")
-
-
 # ---------------------------------------------------------------------------
-# Panel specification
+# Condition discovery + labels
 # ---------------------------------------------------------------------------
 
 ColumnSpec = dict[str, Any]
 
-PANELS: list[dict[str, Any]] = [
-    {
-        "title": "Shape Factory",
-        "task": "shapefactory",
-        "metric": metric_probe_grounding_std,
-        "metric_label": "Grounding STD",
-        "columns": [
-            {"label": "+BW↓", "condition": "bandwidth_1_msg_per_sim_min"},
-            # N=10 group size; rename to awareness_dashboard if you meant +Dash only.
-            {"label": "+Dash\nN=10", "condition": "group_size_10"},
-        ],
-    },
-    {
-        "title": "Map Task",
-        "task": "maptask",
-        "metric": metric_lang_std,
-        "metric_label": "Lang STD",
-        "columns": [
-            {"label": "+BW↓", "condition": "bandwidth_max_words_5"},
-            {"label": "+Canvas", "condition": "canvas_visibility"},
-        ],
-    },
-    {
-        "title": "Hidden Profile",
-        "task": "hidden_profile",
-        "metric": metric_probe_grounding_std,
-        "metric_label": "Grounding STD",
-        "columns": [
-            {"label": "+BW↓", "condition": "bandwidth_max_words_5"},
-            {
-                "label": "+Theory",
-                "condition": "bandwidth_max_words_5",
-                "metric": metric_probe_coordination_std,
-                "metric_label": "Coordination STD",
-            },
-        ],
-    },
-    {
-        "title": "DayTrader",
-        "task": "daytrader",
-        "metric": metric_probe_grounding_std,
-        "metric_label": "Grounding STD",
-        "columns": [
-            {"label": "+BW↓", "condition": "bandwidth_1_msg_per_5_actions"},
-            {"label": "N=9", "condition": "group_size_9"},
-            {"label": "+Theory", "condition": "group_size_6"},
-        ],
-    },
+TASK_SPECS: list[tuple[str, str, MetricFn, str]] = [
+    ("Shape Factory", "shapefactory", metric_probe_grounding_std, "Grounding STD"),
+    ("Map Task", "maptask", metric_lang_std, "Lang STD"),
+    ("Hidden Profile", "hidden_profile", metric_probe_grounding_std, "Grounding STD"),
+    ("DayTrader", "daytrader", metric_probe_grounding_std, "Grounding STD"),
 ]
 
 MODELS: list[tuple[str, Path | None]] = [
@@ -133,8 +108,64 @@ MODELS: list[tuple[str, Path | None]] = [
     ("Llama", None),
 ]
 
-BASELINE_CONDITION = "baseline"
-ARROW_THRESHOLD = 0.005
+
+def condition_slug_to_label(slug: str) -> str:
+    if slug == BASELINE_CONDITION:
+        return "Base"
+    if "bandwidth" in slug:
+        return "+BW↓"
+    if slug == "awareness_dashboard":
+        return "+Dash"
+    if slug == "canvas_visibility":
+        return "+Canvas"
+    m = re.fullmatch(r"group_size_(\d+)", slug)
+    if m:
+        return f"N={m.group(1)}"
+    return slug
+
+
+def condition_sort_key(slug: str) -> tuple[int, int | str]:
+    if slug == BASELINE_CONDITION:
+        return (0, 0)
+    if "bandwidth" in slug:
+        return (1, 0)
+    if slug == "awareness_dashboard":
+        return (2, 0)
+    if slug == "canvas_visibility":
+        return (2, 0)
+    m = re.fullmatch(r"group_size_(\d+)", slug)
+    if m:
+        return (3, int(m.group(1)))
+    return (4, slug)
+
+
+def discover_conditions(task: str) -> list[str]:
+    cfg_dir = CONFIGS_DIR / task
+    if not cfg_dir.is_dir():
+        raise FileNotFoundError(f"Missing config dir: {cfg_dir}")
+    slugs = [p.stem for p in cfg_dir.glob("*.yml")]
+    if not slugs:
+        raise ValueError(f"No *.yml configs in {cfg_dir}")
+    return sorted(slugs, key=condition_sort_key)
+
+
+def build_panels() -> list[dict[str, Any]]:
+    panels: list[dict[str, Any]] = []
+    for title, task, metric_fn, metric_label in TASK_SPECS:
+        columns = [
+            {"label": condition_slug_to_label(slug), "condition": slug}
+            for slug in discover_conditions(task)
+        ]
+        panels.append(
+            {
+                "title": title,
+                "task": task,
+                "metric": metric_fn,
+                "metric_label": metric_label,
+                "columns": columns,
+            }
+        )
+    return panels
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +180,8 @@ def load_metrics(model_root: Path, task: str, condition: str) -> dict[str, Any] 
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def resolve_metric(column: ColumnSpec, panel: dict[str, Any]) -> tuple[MetricFn, str]:
-    metric_fn = column.get("metric") or panel["metric"]
-    label = column.get("metric_label") or panel.get("metric_label", "STD")
-    return metric_fn, label
+def resolve_metric(column: ColumnSpec, panel: dict[str, Any]) -> MetricFn:
+    return column.get("metric") or panel["metric"]
 
 
 def cell_value(
@@ -162,12 +191,10 @@ def cell_value(
 ) -> float | None:
     if model_root is None:
         return None
-    condition = column["condition"]
-    metrics = load_metrics(model_root, panel["task"], condition)
+    metrics = load_metrics(model_root, panel["task"], column["condition"])
     if metrics is None:
         return None
-    metric_fn, _ = resolve_metric(column, panel)
-    return metric_fn(metrics)
+    return resolve_metric(column, panel)(metrics)
 
 
 def baseline_value(
@@ -180,11 +207,17 @@ def baseline_value(
     metrics = load_metrics(model_root, panel["task"], BASELINE_CONDITION)
     if metrics is None:
         return None
-    metric_fn, _ = resolve_metric(column, panel)
-    return metric_fn(metrics)
+    return resolve_metric(column, panel)(metrics)
 
 
-def delta_arrow(value: float | None, baseline: float | None) -> str:
+def delta_arrow(
+    value: float | None,
+    baseline: float | None,
+    *,
+    is_baseline_column: bool,
+) -> str:
+    if is_baseline_column:
+        return "—"
     if value is None or baseline is None:
         return "—"
     delta = value - baseline
@@ -201,7 +234,8 @@ def delta_arrow(value: float | None, baseline: float | None) -> str:
 
 
 def _text_color(norm_value: float) -> str:
-    return "white" if norm_value > 0.62 else "black"
+    # Switch to light text once cells enter the mid-blue part of the gradient.
+    return "white" if norm_value > 0.48 else "#1a1a1a"
 
 
 def draw_panel(
@@ -211,23 +245,23 @@ def draw_panel(
     models: list[tuple[str, Path | None]],
     *,
     show_ylabel: bool,
+    label_fontsize: float,
 ) -> ScalarMappable | None:
     columns: list[ColumnSpec] = panel["columns"]
     n_rows = len(models)
     n_cols = len(columns)
 
     values = np.full((n_rows, n_cols), np.nan, dtype=float)
-    arrows = [[""] * n_cols for _ in range(n_rows)]
     labels = [[""] * n_cols for _ in range(n_rows)]
 
     for r, (_, model_root) in enumerate(models):
         for c, column in enumerate(columns):
             val = cell_value(model_root, panel, column)
             base = baseline_value(model_root, panel, column)
+            is_base = column["condition"] == BASELINE_CONDITION
             if val is not None:
                 values[r, c] = val
-            arrows[r][c] = delta_arrow(val, base)
-            labels[r][c] = "—" if val is None else f"{val:.2f}\n{arrows[r][c]}"
+            labels[r][c] = "—" if val is None else f"{val:.2f}"
 
     finite = values[np.isfinite(values)]
     if finite.size == 0:
@@ -248,36 +282,37 @@ def draw_panel(
     ax.set_ylim(n_rows - 0.5, -0.5)
     ax.set_aspect("equal")
 
+    cell_font = 9 if n_cols > 4 else 10
     for r in range(n_rows):
         for c in range(n_cols):
             val = values[r, c]
-            face = "#f0f0f0" if math.isnan(val) else cmap(norm(val))
-            rect = Rectangle(
-                (c - 0.5, r - 0.5),
-                1,
-                1,
-                facecolor=face,
-                edgecolor="white",
-                linewidth=2,
-            )
-            ax.add_patch(rect)
-            if not math.isnan(val):
-                nv = norm(val)
-                ax.text(
-                    c,
-                    r,
-                    labels[r][c],
-                    ha="center",
-                    va="center",
-                    fontsize=9,
-                    color=_text_color(nv),
-                    linespacing=1.1,
+            face = "#f5f5f5" if math.isnan(val) else cmap(norm(val))
+            ax.add_patch(
+                Rectangle(
+                    (c - 0.5, r - 0.5),
+                    1,
+                    1,
+                    facecolor=face,
+                    edgecolor="white",
+                    linewidth=1.5,
                 )
-            else:
-                ax.text(c, r, "—", ha="center", va="center", fontsize=10, color="#666666")
+            )
+            txt = labels[r][c]
+            color = "#aaaaaa" if math.isnan(val) else _text_color(norm(val))
+            ax.text(
+                c, r, txt,
+                ha="center", va="center",
+                fontsize=cell_font, color=color,
+                fontweight="semibold",
+            )
 
     ax.set_xticks(range(n_cols))
-    ax.set_xticklabels([col["label"] for col in columns], fontsize=9)
+    ax.set_xticklabels(
+        [col["label"] for col in columns],
+        fontsize=label_fontsize,
+        rotation=30 if n_cols > 4 else 0,
+        ha="right" if n_cols > 4 else "center",
+    )
     ax.set_yticks(range(n_rows))
     if show_ylabel:
         ax.set_yticklabels([name for name, _ in models], fontsize=10)
@@ -287,13 +322,14 @@ def draw_panel(
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    ax.set_title(panel["title"], fontsize=12, fontweight="bold", pad=10)
-    ax.set_xlabel("")
+    ax.set_title(
+        f"{panel['title']}\n({panel.get('metric_label', '')})",
+        fontsize=11, fontweight="bold", pad=10, linespacing=1.4,
+    )
     return sm
 
 
 def resolve_models(data_root: Path) -> list[tuple[str, Path | None]]:
-    """Map model display names to experiment directories under data_root."""
     resolved: list[tuple[str, Path | None]] = []
     for name, configured in MODELS:
         if configured is None:
@@ -311,29 +347,44 @@ def plot_figure(
     dpi: int = 160,
     data_root: Path = DEFAULT_DATA_ROOT,
 ) -> None:
+    panels = build_panels()
     models = resolve_models(data_root)
+    max_cols = max(len(p["columns"]) for p in panels)
 
-    cmap = plt.cm.YlGnBu
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8.5), constrained_layout=True)
+    cmap = make_ablation_cmap()
+    fig_w = max(12.0, 1.5 * max_cols + 4.5)
+    fig, axes = plt.subplots(2, 2, figsize=(fig_w, 8.0), constrained_layout=True)
     fig.patch.set_facecolor("white")
 
-    for ax, panel in zip(axes.flatten(), PANELS, strict=True):
-        sm = draw_panel(ax, panel, cmap, models, show_ylabel=(ax.get_subplotspec().colspan.start == 0))
+    label_fs = 8 if max_cols > 4 else 9
+    for ax, panel in zip(axes.flatten(), panels, strict=True):
+        sm = draw_panel(
+            ax,
+            panel,
+            cmap,
+            models,
+            show_ylabel=(ax.get_subplotspec().colspan.start == 0),
+            label_fontsize=label_fs,
+        )
         if sm is not None:
-            cbar = fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.04, aspect=18)
-            cbar.ax.tick_params(labelsize=7)
-            metric_label = panel.get("metric_label", "STD")
-            cbar.set_label(metric_label, fontsize=8)
+            cbar = fig.colorbar(sm, ax=ax, fraction=0.025, pad=0.02, aspect=28)
+            cbar.outline.set_visible(False)
+            cbar.ax.tick_params(labelsize=7, length=2, width=0.5)
+            cbar.ax.yaxis.set_tick_params(pad=2)
 
     fig.suptitle(
-        "Persona study — condition heatmaps (value + Δ vs baseline)",
-        fontsize=14,
+        "Condition ablation across tasks and models",
+        fontsize=13,
         fontweight="bold",
+        y=1.01,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Wrote {out_path}")
+    for panel in panels:
+        labels = [c["label"] for c in panel["columns"]]
+        print(f"  {panel['title']}: {labels}")
 
 
 def main() -> None:
