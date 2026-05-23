@@ -28,8 +28,8 @@ fi
 
 TASK="$1"
 shift
-OUT_BASE="${COLLABSIM_OUT_BASE:-$ROOT/experiments/study_conditions/${TASK}}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+OUT_BASE="${COLLABSIM_OUT_BASE:-$ROOT/experiments/study_conditions/${TASK}}"
 cd "$ROOT"
 HELPERS="$ROOT/configs/study_conditions/batch_helpers.py"
 
