@@ -38,6 +38,11 @@ MetricFn = Callable[[dict[str, Any]], float | None]
 
 BASELINE_CONDITION = "baseline"
 ARROW_THRESHOLD = 0.005
+# Per-task skips: SF baseline is already 6 agents, so N=6 duplicates Base.
+# DayTrader baseline is 3 agents — keep N=6.
+EXCLUDED_CONDITIONS_BY_TASK: dict[str, frozenset[str]] = {
+    "shapefactory": frozenset({"group_size_6"}),
+}
 
 # Custom ablation gradient: #ffffd9 (low) → … → #061d58 (high)
 _ABLATION_CMAP_STOPS: list[str] = [
@@ -143,7 +148,8 @@ def discover_conditions(task: str) -> list[str]:
     cfg_dir = CONFIGS_DIR / task
     if not cfg_dir.is_dir():
         raise FileNotFoundError(f"Missing config dir: {cfg_dir}")
-    slugs = [p.stem for p in cfg_dir.glob("*.yml")]
+    excluded = EXCLUDED_CONDITIONS_BY_TASK.get(task, frozenset())
+    slugs = [p.stem for p in cfg_dir.glob("*.yml") if p.stem not in excluded]
     if not slugs:
         raise ValueError(f"No *.yml configs in {cfg_dir}")
     return sorted(slugs, key=condition_sort_key)

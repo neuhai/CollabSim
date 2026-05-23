@@ -1,7 +1,7 @@
 experiment:
   id: "study_hp_baseline"
   seed: 42
-  max_steps: 90
+  max_steps: 30
 
 prompts:
   system: "prompts/system_instructions.md"
@@ -64,6 +64,7 @@ protocol:
   step_mode: "step"
   termination:
     condition: "task_complete"
+    noop_consecutive_cycles: 2
 
 probe:
   cadence: "per_action"
@@ -72,5 +73,5 @@ probe:
 
 logging:
   trace_schema_version: "v0"
-  output_dir: "experiments/study_conditions/hidden_profile/baseline"
+  output_dir: "experiments/study_conditions/hidden_profile10/baseline"
   observation_events: true

@@ -332,14 +332,11 @@ def _summarize_event_payload(event: dict[str, Any]) -> str:
     payload = event.get("payload")
     if not isinstance(payload, dict):
         return ""
-    keys = ("error_message", "message_id", "channel", "content_type", "recipients")
+    keys = ("error_message", "message_id", "channel", "content", "content_type", "recipients")
     parts: list[str] = []
     for key in keys:
         if key in payload:
-            val = payload[key]
-            if key == "content" and isinstance(val, str) and len(val) > 80:
-                val = val[:77] + "..."
-            parts.append(f"{key}={val!r}")
+            parts.append(f"{key}={payload[key]!r}")
     if parts:
         return " " + ", ".join(parts)
     return ""

@@ -28,7 +28,6 @@ fi
 
 TASK="$1"
 shift
-OUT_BASE="${COLLABSIM_OUT_BASE:-$ROOT/experiments/study_conditions/${TASK}}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 HELPERS="$ROOT/configs/study_conditions/batch_helpers.py"
@@ -47,6 +46,7 @@ FORCE=false
 RETRY_FAILED=false
 LIST_FAILED=false
 WANDB_UPLOAD=true
+ENSURE_DIRS_ONLY=false
 JOBS="${COLLABSIM_BATCH_JOBS:-0}"
 WANDB_PROJECT="${WANDB_PROJECT:-collabsim}"
 
@@ -98,6 +98,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-wandb-upload)
       WANDB_UPLOAD=false
+      shift
+      ;;
+    --ensure-dirs)
+      ENSURE_DIRS_ONLY=true
       shift
       ;;
     *)
@@ -228,8 +232,34 @@ fi
 
 OUT_BASE="${COLLABSIM_OUT_BASE:-$ROOT/experiments/study_conditions/${TASK}}"
 CFG_DIR="$ROOT/configs/study_conditions/${TASK}"
-mkdir -p "$OUT_BASE"
-BATCH_LOG="$OUT_BASE/_batch_${STAMP}.log"
+
+resolve_condition_output_dir() {
+  local cfg="$1"
+  local slug="$2"
+  uv run python - "$cfg" "$ROOT" "$OUT_BASE" "$slug" <<'PY'
+import sys
+from pathlib import Path
+
+import yaml
+
+cfg_path = Path(sys.argv[1])
+root = Path(sys.argv[2])
+out_base = Path(sys.argv[3])
+slug = sys.argv[4]
+
+with cfg_path.open(encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}
+logging_cfg = data.get("logging") if isinstance(data, dict) else {}
+raw = logging_cfg.get("output_dir") if isinstance(logging_cfg, dict) else None
+if isinstance(raw, str) and raw.strip():
+    out_dir = Path(raw.strip())
+    if not out_dir.is_absolute():
+        out_dir = root / out_dir
+    print(out_dir.resolve())
+else:
+    print((out_base / slug).resolve())
+PY
+}
 
 condition_out_dir() {
   local base="$1"
@@ -240,6 +270,33 @@ condition_out_dir() {
     echo "${base}/${slug}"
   fi
 }
+
+resolve_condition_out_dir() {
+  local cfg="$1"
+  local slug="$2"
+  local out
+  out="$(resolve_condition_output_dir "$cfg" "$slug")"
+  if [[ "$COLLABORATION" == true ]]; then
+    out="${out}_collab"
+  fi
+  echo "$out"
+}
+
+ensure_task_output_dirs() {
+  shopt -s nullglob
+  local cfg slug out
+  mkdir -p "$OUT_BASE"
+  for cfg in "$CFG_DIR"/*.yml; do
+    slug="$(basename "$cfg" .yml)"
+    out="$(resolve_condition_out_dir "$cfg" "$slug")"
+    mkdir -p "$out"
+  done
+}
+
+ensure_task_output_dirs
+if [[ "$ENSURE_DIRS_ONLY" == true ]]; then
+  exit 0
+fi
 
 condition_should_skip() {
   local out_dir="$1"
@@ -289,31 +346,36 @@ run_one_condition() {
   return "$status"
 }
 
-{
-  echo "batch_start=${STAMP}"
-  echo "mode=${MODE}"
-  echo "task=${TASK}"
-  echo "collaboration=${COLLABORATION}"
-  echo "retry_failed=${RETRY_FAILED}"
-  echo "jobs=${JOBS}"
-  echo "force=${FORCE}"
-  echo "wandb_upload=${WANDB_UPLOAD}"
-  echo "repo=${ROOT}"
-} | tee "$BATCH_LOG"
-
 shopt -s nullglob
 configs=("$CFG_DIR"/*.yml)
 if [[ ${#configs[@]} -eq 0 ]]; then
-  echo "No configs in ${CFG_DIR}" | tee -a "$BATCH_LOG"
+  echo "No configs in ${CFG_DIR}" >&2
   exit 1
 fi
 
 pending_cfgs=()
 pending_slugs=()
+pending_outs=()
 skipped=0
+BATCH_LOG=""
 for cfg in "${configs[@]}"; do
   slug="$(basename "$cfg" .yml)"
-  out="$(condition_out_dir "$OUT_BASE" "$slug")"
+  out="$(resolve_condition_out_dir "$cfg" "$slug")"
+  if [[ -z "$BATCH_LOG" ]]; then
+    mkdir -p "$(dirname "$out")"
+    BATCH_LOG="$(dirname "$out")/_batch_${STAMP}.log"
+    {
+      echo "batch_start=${STAMP}"
+      echo "mode=${MODE}"
+      echo "task=${TASK}"
+      echo "collaboration=${COLLABORATION}"
+      echo "retry_failed=${RETRY_FAILED}"
+      echo "jobs=${JOBS}"
+      echo "force=${FORCE}"
+      echo "wandb_upload=${WANDB_UPLOAD}"
+      echo "repo=${ROOT}"
+    } | tee "$BATCH_LOG"
+  fi
   if [[ "$FORCE" != true ]] && condition_should_skip "$out" "$MODE"; then
     echo "SKIP ${slug} (existing results in ${out})" | tee -a "$BATCH_LOG"
     skipped=$((skipped + 1))
@@ -321,10 +383,17 @@ for cfg in "${configs[@]}"; do
   fi
   pending_cfgs+=("$cfg")
   pending_slugs+=("$slug")
+  pending_outs+=("$out")
 done
 
 if [[ ${#pending_cfgs[@]} -eq 0 ]]; then
-  echo "batch_end=${STAMP} nothing_to_run skipped=${skipped} log=${BATCH_LOG}"
+  if [[ -z "$BATCH_LOG" ]]; then
+    mkdir -p "$OUT_BASE"
+    BATCH_LOG="$OUT_BASE/_batch_${STAMP}.log"
+    echo "batch_start=${STAMP} nothing_to_run skipped=${skipped}" | tee "$BATCH_LOG"
+  else
+    echo "batch_end=${STAMP} nothing_to_run skipped=${skipped} log=${BATCH_LOG}" | tee -a "$BATCH_LOG"
+  fi
   metadata_json="$(python3 - <<PY
 import json
 print(json.dumps({
@@ -356,7 +425,7 @@ failures=0
 for i in "${!pending_cfgs[@]}"; do
   cfg="${pending_cfgs[$i]}"
   slug="${pending_slugs[$i]}"
-  out="$(condition_out_dir "$OUT_BASE" "$slug")"
+  out="${pending_outs[$i]}"
   runlog="${out}/run_${STAMP}.log"
 
   while (( $(jobs -r 2>/dev/null | wc -l | tr -d ' ') >= JOBS )); do
@@ -367,8 +436,8 @@ for i in "${!pending_cfgs[@]}"; do
 done
 wait || true
 
-for slug in "${pending_slugs[@]}"; do
-  out="$(condition_out_dir "$OUT_BASE" "$slug")"
+for i in "${!pending_slugs[@]}"; do
+  out="${pending_outs[$i]}"
   status_file="${out}/.batch_exit_${STAMP}"
   if [[ ! -f "$status_file" ]] || [[ "$(cat "$status_file")" != "0" ]]; then
     failures=$((failures + 1))
