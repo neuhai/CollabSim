@@ -190,13 +190,12 @@ class ExperimentController:
 
         resolved_max_steps = self._resolve_max_steps(max_steps)
         self._reset_agents()
-        termination_condition = self._termination_condition()
         noop_cycle_target = self._noop_consecutive_cycles_target()
         noop_cycle_streak = 0
         if self._step_mode() == "event":
             self._schedule_context_updates()
             while self.state.step_index < resolved_max_steps:
-                if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
+                if self._should_terminate_for_task_complete():
                     break
                 if (
                     not self._uses_maptask_event_pipeline()
@@ -214,7 +213,7 @@ class ExperimentController:
                         break
         else:
             while self.state.step_index < resolved_max_steps:
-                if termination_condition == "task_complete" and self.state.task_state.get("complete") is True:
+                if self._should_terminate_for_task_complete():
                     break
                 self.step()
                 if noop_cycle_target is not None:
@@ -251,6 +250,16 @@ class ExperimentController:
         if isinstance(condition, str) and condition:
             return condition
         return "task_complete"
+
+    def _should_terminate_for_task_complete(self) -> bool:
+        """Stop early when task_state.complete is set (route done or step budget exhausted)."""
+
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict) or task_state.get("complete") is not True:
+            return False
+        if self._termination_condition() == "task_complete":
+            return True
+        return self._task_type() == "maptask" or self._experiment_type() == "maptask"
 
     def _noop_consecutive_cycles_target(self) -> int | None:
         if not isinstance(self.config, dict):
@@ -365,7 +374,7 @@ class ExperimentController:
                 break
             if isinstance(max_steps, int) and max_steps > 0 and self.state.step_index >= max_steps:
                 break
-            if self._termination_condition() == "task_complete" and self.state.task_state.get("complete") is True:
+            if self._should_terminate_for_task_complete():
                 break
             if self._pending_realtime_message_queue:
                 ready_queue_entries: list[dict[str, Any]] = []

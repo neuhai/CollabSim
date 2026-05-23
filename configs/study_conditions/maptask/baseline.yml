@@ -34,7 +34,7 @@ controls:
 
 task:
   type: "maptask"
-  target_steps: 10000
+  target_steps: 120
   canvas_visibility: false
   map_material:
     map_json: "configs/map_task_material/map.json"
@@ -49,7 +49,7 @@ protocol:
   turn_taking: "simultaneous"
   step_mode: "event"
   termination:
-    condition: "max_steps"
+    condition: "task_complete"
     noop_consecutive_cycles: 2
 
 probe:

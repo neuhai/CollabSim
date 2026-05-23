@@ -3,7 +3,7 @@
 # Task audit summary:
 # - Initial state: participants with role/map/map_progress and target_steps/steps_taken/complete.
 # - Supported actions: draw, erase, undo, reset via maptask_apply_action.
-# - Stop condition: task marks complete when steps_taken >= target_steps.
+# - Stop condition: complete when follower reaches finish cell, or steps_taken >= target_steps.
 # - Probing trigger: no task-local trigger; probing cadence is controlled by controller/probe config.
 
 from __future__ import annotations
@@ -21,7 +21,14 @@ def maptask_init_state(config: dict[str, Any]) -> dict[str, Any]:
     """Initialize MapTask state."""
 
     task_cfg = config.get("task", {})
-    target_steps = task_cfg.get("target_steps", 30)
+    target_steps = task_cfg.get("target_steps")
+    if not isinstance(target_steps, int) or target_steps <= 0:
+        experiment = config.get("experiment", {})
+        max_steps = experiment.get("max_steps") if isinstance(experiment, dict) else None
+        if isinstance(max_steps, int) and max_steps > 0:
+            target_steps = max_steps
+        else:
+            target_steps = 30
     if not isinstance(target_steps, int) or target_steps <= 0:
         raise ValueError("task.target_steps must be a positive integer for maptask.")
     roles = task_cfg.get("roles", {})
