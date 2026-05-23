@@ -71,6 +71,38 @@ class HiddenProfilePhaseTests(unittest.TestCase):
         ts = controller.state.task_state
         self.assertFalse(ts.get("discussion_force_final"))
 
+    def test_step_mode_all_noop_cycle_flag(self) -> None:
+        controller = build_controller(
+            ExperimentState(agents={}, task_state={}, resources={}, turn_state={}, buffers={}),
+            config=_hidden_profile_config(),
+        )
+        controller.state.turn_state["_noop_cycle_agents"] = ["A", "B", "C"]
+        controller.state.pending_actions = [
+            {"actor_id": aid, "type": "do_nothing", "payload": {"reason": "wait"}, "timestamp": 5}
+            for aid in ("A", "B", "C")
+        ]
+        controller._process_actions()
+        self.assertTrue(controller.state.turn_state.get("_all_agents_noop_cycle"))
+
+    def test_step_mode_mixed_actions_not_all_noop_cycle(self) -> None:
+        controller = build_controller(
+            ExperimentState(agents={}, task_state={}, resources={}, turn_state={}, buffers={}),
+            config=_hidden_profile_config(),
+        )
+        controller.state.turn_state["_noop_cycle_agents"] = ["A", "B", "C"]
+        controller.state.pending_actions = [
+            {"actor_id": "A", "type": "do_nothing", "payload": {}, "timestamp": 5},
+            {
+                "actor_id": "B",
+                "type": "message",
+                "payload": {"channel": "broadcast", "content": "hi", "content_type": "text"},
+                "timestamp": 5,
+            },
+            {"actor_id": "C", "type": "do_nothing", "payload": {}, "timestamp": 5},
+        ]
+        controller._process_actions()
+        self.assertFalse(controller.state.turn_state.get("_all_agents_noop_cycle"))
+
     def test_forced_final_vote_overrides_step_schedule(self) -> None:
         controller = build_controller(
             ExperimentState(agents={}, task_state={}, resources={}, turn_state={}, buffers={}),

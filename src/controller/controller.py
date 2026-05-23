@@ -1228,8 +1228,11 @@ class ExperimentController:
         pending = list(self.state.pending_actions)
         self.state.pending_actions.clear()
         if self._step_mode() != "event":
+            cycle_agents = self.state.turn_state.pop("_noop_cycle_agents", None)
             processed_any = False
             had_non_noop = False
+            actor_has_action: dict[str, bool] = {}
+            actor_has_non_noop_action: dict[str, bool] = {}
             for action in pending:
                 processed = self._process_submitted_action(action, apply_immediately=True)
                 if not isinstance(processed, dict):
@@ -1237,10 +1240,20 @@ class ExperimentController:
                 processed_any = True
                 actor_id = processed.get("actor_id")
                 if isinstance(actor_id, str) and actor_id:
+                    actor_has_action[actor_id] = True
                     self._advance_daytrader_phase_from_action(actor_id, processed)
                     self._advance_hidden_profile_phase_from_action(actor_id, processed)
                 if processed.get("type") != "do_nothing":
                     had_non_noop = True
+                    if isinstance(actor_id, str) and actor_id:
+                        actor_has_non_noop_action[actor_id] = True
+            if isinstance(cycle_agents, list) and cycle_agents:
+                all_agents_noop_cycle = bool(cycle_agents) and all(
+                    actor_has_action.get(agent_id, False)
+                    and not actor_has_non_noop_action.get(agent_id, False)
+                    for agent_id in cycle_agents
+                )
+                self.state.turn_state["_all_agents_noop_cycle"] = all_agents_noop_cycle
             self._sync_daytrader_round_phase()
             return processed_any, had_non_noop
 
@@ -2189,14 +2202,18 @@ class ExperimentController:
         agent_ids = self._resolve_turn_order()
         if self._turn_taking() == "sequential":
             agent_ids = agent_ids[:1]
+        cycle_agents: list[str] = []
         for agent_id in agent_ids:
             if agent_id not in pending:
                 continue
             if not self._is_agent_idle(agent_id):
                 continue
+            cycle_agents.append(agent_id)
             self.state.pending_context_updates.pop(agent_id, None)
             self._context_update_agent(agent_id)
             self.state.last_context_hash[agent_id] = pending[agent_id].get("signature", "")
+        if cycle_agents and self._step_mode() == "step":
+            self.state.turn_state["_noop_cycle_agents"] = cycle_agents
 
     def _drain_pending_actions_for_maptask_event(
         self,
