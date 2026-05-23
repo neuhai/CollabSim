@@ -3524,6 +3524,8 @@ class ExperimentController:
                 return "You cannot send a direct message to yourself."
             if len(set(recipients)) != len(recipients):
                 return "message.recipients must not contain duplicates."
+            if len(recipients) > 1:
+                return "Direct messages can only have one recipient. Use broadcast channel for group messages."
         if channel == "broadcast":
             recipients = payload.get("recipients")
             if recipients is not None:
@@ -4424,8 +4426,8 @@ class ExperimentController:
                     if not isinstance(v, dict):
                         per_agent[agent_id][f"probe_{construct}_{k}"] = v
         # Merge overall probe stats into per_run
-        for construct in ("grounding", "coordination"):
-            for k, v in probe_analysis.get("overall", {}).get(construct, {}).items():
+        for construct, cmetrics in probe_analysis.get("overall", {}).items():
+            for k, v in cmetrics.items():
                 if not isinstance(v, dict):
                     per_run[f"probe_{construct}_{k}"] = v
         write_metrics(self.run_paths, {"per_agent": per_agent, "per_run": per_run})

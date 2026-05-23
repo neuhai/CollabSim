@@ -14,9 +14,9 @@ prompts:
   persona_profiles: "prompts/persona_profiles.json"
 
 agents:
-  - {id: "A", role: "investor", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
-  - {id: "B", role: "investor", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
-  - {id: "C", role: "investor", model: {provider: "azure", name: "gpt-5.3-codex", temperature: 0.0}}
+  - {id: "A", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
+  - {id: "B", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
+  - {id: "C", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
 
 action_space:
   enabled: ["message", "make_individual_investment", "make_group_investment", "do_nothing"]
