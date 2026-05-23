@@ -120,6 +120,46 @@ class DayTraderPhaseTests(unittest.TestCase):
         self.assertTrue(ts.get("complete"))
         self.assertEqual(ts.get("rounds_completed"), 30)
 
+    def test_group_chat_completes_after_rejected_message_drains_queue(self) -> None:
+        config = _daytrader_config(target_rounds=30, discussion_every_n_rounds=5)
+        config["agents"] = [
+            {"id": "A", "role": "investor", "model": {"provider": "local", "name": "dummy"}},
+            {"id": "B", "role": "investor", "model": {"provider": "local", "name": "dummy"}},
+            {"id": "C", "role": "investor", "model": {"provider": "local", "name": "dummy"}},
+        ]
+        config["controls"] = {"communication": {"min_agent_actions_between_communicate": 5}}
+
+        controller = build_controller(
+            ExperimentState(agents={}, task_state={}, resources={}, turn_state={}, buffers={}),
+            config=config,
+        )
+        ts = controller.state.task_state
+        ts["round_index"] = 30
+        ts["phase"] = "group_chat"
+        ts["group_chat_turns"] = 11
+        ts["rounds_completed"] = 29
+
+        comm_state = controller._communication_controls_state()
+        comm_state["actions_since_comm"] = {"C": 2}
+
+        controller.state.pending_actions.append(
+            {
+                "type": "message",
+                "actor_id": "C",
+                "timestamp": 66,
+                "payload": {
+                    "channel": "broadcast",
+                    "content": "Great game everyone!",
+                    "content_type": "text",
+                    "recipients": ["A", "B"],
+                },
+            }
+        )
+        controller.step()
+
+        self.assertTrue(ts.get("complete"))
+        self.assertEqual(ts.get("rounds_completed"), 30)
+
 
 if __name__ == "__main__":
     unittest.main()

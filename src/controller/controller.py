@@ -1101,6 +1101,7 @@ class ExperimentController:
         self._maybe_log_probe(had_action)
         if self._task_type() == "daytrader" and self._step_mode() != "time" and self._daytrader_phase() == "group_chat":
             self._step_daytrader_group_chat_queue()
+            self._maybe_finish_daytrader_group_chat()
         else:
             self._schedule_context_updates()
             self._process_context_updates()
@@ -3608,6 +3609,31 @@ class ExperimentController:
 
     def _daytrader_group_chat_bootstrap_targets(self, agent_ids: list[str]) -> list[str]:
         return [agent_id for agent_id in sorted(agent_ids) if isinstance(agent_id, str) and agent_id]
+
+    def _maybe_finish_daytrader_group_chat(self) -> None:
+        """End group_chat when the trigger queue and pending actions are both drained.
+
+        Step-mode group_chat only schedules agents via the realtime queue. If the last
+        queued agent's action is rejected (e.g. bandwidth limit), no validated action
+        advances the phase and the run can deadlock with an empty queue.
+        """
+        if self._task_type() != "daytrader":
+            return
+        if self._step_mode() == "time":
+            return
+        if self._daytrader_phase() != "group_chat":
+            return
+        if self._pending_realtime_message_queue:
+            return
+        if self.state.pending_actions:
+            return
+        task_state = self.state.task_state
+        if not isinstance(task_state, dict):
+            return
+        agent_ids = self._daytrader_agent_ids()
+        if not agent_ids:
+            return
+        self._daytrader_advance_to_next_round(task_state, agent_ids)
 
     def _step_daytrader_group_chat_queue(self) -> None:
         if not self._pending_realtime_message_queue:
