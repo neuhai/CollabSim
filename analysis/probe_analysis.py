@@ -3,6 +3,9 @@
 Probe templates used across all four experiments:
   grounding_v1    — "State your partner's current intent in one sentence."
                     structured_fields: partner_intent, beliefs
+    situation_awareness_v1
+                                    — maptask-compatible grounding-like probe family
+                                        (mapped into grounding metrics for backward compatibility)
   coordination_v1 — "Name the main coordination obstacle right now."
                     structured_fields: obstacle, next_step
 
@@ -67,6 +70,14 @@ def _field_frequencies(probes: list[dict[str, Any]], field: str) -> dict[str, in
     return dict(sorted(counts.items(), key=lambda x: -x[1]))
 
 
+def _probes_of_aliases(trace: Trace, constructs: list[str]) -> list[dict[str, Any]]:
+    """Return probes whose construct is in ``constructs`` preserving log order."""
+    if not constructs:
+        return []
+    allowed = set(constructs)
+    return [p for p in trace.probes if p.get("construct") in allowed]
+
+
 # ------------------------------------------------------------------ #
 # Per-construct analysis
 # ------------------------------------------------------------------ #
@@ -95,14 +106,15 @@ def _analyze_construct(
 
 
 def analyze_probes(trace: Trace) -> dict[str, Any]:
-    """Return probe analysis for *grounding_v1* and *coordination_v1* constructs.
+    """Return probe analysis for grounding-like and coordination constructs.
 
     Returns a dict with keys:
       overall.grounding    — run-level grounding metrics
       overall.coordination — run-level coordination metrics
       per_agent            — {agent_id: {grounding: …, coordination: …}}
     """
-    grounding_probes = trace.probes_of_construct("grounding")
+    # Backward compatibility: maptask uses situation_awareness_v1 instead of grounding_v1.
+    grounding_probes = _probes_of_aliases(trace, ["grounding", "situation_awareness"])
     coordination_probes = trace.probes_of_construct("coordination")
 
     overall_grounding = _analyze_construct(grounding_probes, ["partner_intent", "beliefs"])

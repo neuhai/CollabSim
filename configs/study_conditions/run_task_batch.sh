@@ -122,7 +122,7 @@ if [[ "$MODE" == "smoke" ]]; then
   STAMP="${STAMP}_smoke10step"
 fi
 
-OUT_BASE="$ROOT/experiments/study_conditions/${TASK}"
+OUT_BASE="${COLLABSIM_OUT_BASE:-$ROOT/experiments/study_conditions/${TASK}}"
 CFG_DIR="$ROOT/configs/study_conditions/${TASK}"
 mkdir -p "$OUT_BASE"
 BATCH_LOG="$OUT_BASE/_batch_${STAMP}.log"
