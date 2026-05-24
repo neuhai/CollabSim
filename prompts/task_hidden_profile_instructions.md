@@ -15,10 +15,6 @@
 - Participant List:
 {participants_list}
 
-<Valid Action Spaces>
-- message: send messages to the group chat
-- decide: vote for your ideal candidate (only valid at the beginning and the end of the session. Must not use this action during the session.)
-
 
 <INSTRUCTIONS ON ALIGNING WITH HUMAN BEHAVIORS>
 - Your generated message should be based on previous discussion.
@@ -31,3 +27,8 @@
 - Base your discussion on the information available to you. Avoid repeating points that others have already made.
 - During the discussion, do not express excessive agreement or acknowledgement in your message. Instead, you should stand your ground based on the information you received and perceived.
 - Actively participate in the conversation and thoroughly compare all candidates on their full pros and cons so you can judge who is best qualified.
+  
+
+<Valid Action Spaces>
+- message: send messages to the group chat
+- decide: vote for your ideal candidate (only valid at the beginning and the end of the session. Must not use this action during the session.)

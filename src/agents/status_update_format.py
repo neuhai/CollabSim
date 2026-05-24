@@ -162,8 +162,122 @@ def _maptask_my_role_and_peer(participants: dict[str, Any], agent_id: str) -> tu
     return my_role, None
 
 
+def _maptask_start_cell(participant: dict[str, Any]) -> list[int] | None:
+    map_info = participant.get("map")
+    if not isinstance(map_info, dict):
+        return None
+    special = map_info.get("special_points")
+    if not isinstance(special, dict):
+        return None
+    start = special.get("start")
+    if not isinstance(start, dict):
+        return None
+    cell = start.get("cell")
+    if isinstance(cell, (list, tuple)) and len(cell) == 2:
+        row, col = cell
+        if isinstance(row, int) and isinstance(col, int):
+            return [row, col]
+    return None
+
+
+def _maptask_is_diagonal_step(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    return abs(a[0] - b[0]) == 1 and abs(a[1] - b[1]) == 1
+
+
+def _maptask_diagonal_hint(cells: list[Any]) -> str | None:
+    points: list[tuple[int, int]] = []
+    for item in cells:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            row, col = item
+            if isinstance(row, int) and isinstance(col, int):
+                points.append((row, col))
+    for prev, nxt in zip(points, points[1:]):
+        if _maptask_is_diagonal_step(prev, nxt):
+            return (
+                f"Hint: {list(nxt)} is diagonal from {list(prev)}; "
+                f"use a 4-connected stair-step such as [{prev[0] + 1}, {prev[1]}] "
+                f"or [{prev[0]}, {prev[1] + (1 if nxt[1] > prev[1] else -1)}]."
+            )
+    return None
+
+
+def _maptask_follower_route_lines(participants: dict[str, Any], agent_id: str) -> list[str]:
+    me = participants.get(agent_id)
+    if not isinstance(me, dict):
+        return []
+    lines: list[str] = ["=== Your route state ==="]
+    pts = me.get("drawn_route_points")
+    cp = me.get("current_position")
+    start = _maptask_start_cell(me)
+    if isinstance(pts, list) and pts:
+        n = len(pts)
+        lines.append(f"Drawn route count: {n}")
+        tail = pts[-20:] if n > 20 else pts
+        if n > 20:
+            lines.append(f"Drawn route cells (last {len(tail)} of {n}): {json.dumps(tail, ensure_ascii=False)}")
+        else:
+            lines.append(f"Drawn route cells: {json.dumps(tail, ensure_ascii=False)}")
+        if cp is not None:
+            lines.append(f"Current brush / anchor [row, col]: {cp}")
+    else:
+        lines.append("Drawn route count: 0 (nothing confirmed on canvas yet)")
+        anchor = cp if cp is not None else start
+        if anchor is not None:
+            lines.append(f"Anchor [row, col]: {anchor}")
+        if start is not None:
+            lines.append(
+                f"Start S is at {start}. First draw.cells point must be 4-connected to S or existing route — "
+                "diagonal steps are rejected."
+            )
+    return lines
+
+
+def _maptask_rejection_lines(events: list[Any], agent_id: str, *, cap: int = 8) -> list[str]:
+    rejections: list[str] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "action_rejected":
+            continue
+        if event.get("actor_id") != agent_id:
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        action = payload.get("action")
+        if not isinstance(action, dict):
+            continue
+        action_type = action.get("type")
+        if action_type not in ("draw", "erase", "undo", "reset"):
+            continue
+        error_message = payload.get("error_message")
+        if not isinstance(error_message, str):
+            error_message = "unknown error"
+        line = f"- {action_type} rejected: {error_message}"
+        action_payload = action.get("payload")
+        if isinstance(action_payload, dict) and action_type == "draw":
+            cells = action_payload.get("cells")
+            if cells is None:
+                cells = action_payload.get("drawn_points")
+            if isinstance(cells, list):
+                hint = _maptask_diagonal_hint(cells)
+                if hint:
+                    line += f"\n  {hint}"
+        rejections.append(line)
+    if not rejections:
+        return []
+    if len(rejections) > cap:
+        rejections = rejections[-cap:]
+    lines = ["=== Recent action rejections (fix before resubmitting) ==="]
+    if len(rejections) == cap:
+        lines.append(f"(showing last {cap} rejections)")
+    lines.extend(rejections)
+    lines.append("Do not repeat the same invalid draw/erase payload; adjust cells per the error above.")
+    return lines
+
+
 def _format_maptask_incremental_status(agent_id: str, observation: Observation) -> str:
-    """MapTask: only peer messages, plus follower canvas for guide when visibility is on."""
+    """MapTask: peer messages, follower route/rejection feedback, guider canvas when enabled."""
 
     lines: list[str] = ["=== Map task · incremental view ==="]
     st_root = observation.state if isinstance(observation.state, dict) else {}
@@ -190,9 +304,19 @@ def _format_maptask_incremental_status(agent_id: str, observation: Observation) 
     lines.append(f"Your role: {role or '?'}. Peer id: {peer_id or '?'}.")
     lines.append("")
 
+    events = observation.visible_events if isinstance(observation.visible_events, list) else []
+    if role == "follower" and isinstance(participants, dict):
+        route_lines = _maptask_follower_route_lines(participants, agent_id)
+        if route_lines:
+            lines.extend(route_lines)
+            lines.append("")
+        rejection_lines = _maptask_rejection_lines(events, agent_id)
+        if rejection_lines:
+            lines.extend(rejection_lines)
+            lines.append("")
+
     lines.append(f"=== Messages from peer ({peer_id or 'unknown'}) ===")
     peer_messages: list[str] = []
-    events = observation.visible_events if isinstance(observation.visible_events, list) else []
     cap = 48
     for event in events:
         if not isinstance(event, dict):

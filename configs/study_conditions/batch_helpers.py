@@ -63,6 +63,31 @@ def list_failed_conditions(
     return failed
 
 
+def download_artifact_from_wandb(
+    artifact_ref: str,
+    *,
+    artifact_type: str = "study_conditions",
+    output_dir: Path | None = None,
+    cache_dir: Path | None = None,
+) -> Path:
+    """Download a W&B artifact and return the local directory path."""
+
+    try:
+        import wandb  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise RuntimeError("wandb is not installed") from exc
+
+    if cache_dir is not None:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("WANDB_CACHE_DIR", str(cache_dir))
+
+    api = wandb.Api()
+    artifact = api.artifact(artifact_ref, type=artifact_type)
+    download_root = str(output_dir) if output_dir is not None else None
+    local_path = Path(artifact.download(root=download_root))
+    return local_path
+
+
 def upload_directory_to_wandb(
     path: Path,
     *,
@@ -116,6 +141,30 @@ def _cmd_list_failed(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _cmd_download_wandb(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--artifact",
+        default="neu-hai/collabsim/study_conditions_20260524_000957:v0",
+        help="W&B artifact ref, e.g. entity/project/name:version",
+    )
+    parser.add_argument("--type", default="study_conditions", help="W&B artifact type")
+    parser.add_argument(
+        "--output-dir",
+        default="",
+        help="Directory to download into (default: W&B cache under ./artifacts/)",
+    )
+    args = parser.parse_args(argv)
+    output_dir = Path(args.output_dir) if args.output_dir else None
+    local_path = download_artifact_from_wandb(
+        args.artifact,
+        artifact_type=args.type,
+        output_dir=output_dir,
+    )
+    print(f"wandb_download_path={local_path}")
+    return 0
+
+
 def _cmd_upload_wandb(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", required=True)
@@ -139,7 +188,7 @@ def _cmd_upload_wandb(argv: list[str] | None = None) -> int:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
-        raise SystemExit("usage: batch_helpers.py <should_skip|list_failed|upload_wandb> ...")
+        raise SystemExit("usage: batch_helpers.py <should_skip|list_failed|upload_wandb|download_wandb> ...")
     command = argv[0]
     rest = argv[1:]
     if command == "should_skip":
@@ -148,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_list_failed(rest)
     if command == "upload_wandb":
         return _cmd_upload_wandb(rest)
+    if command == "download_wandb":
+        return _cmd_download_wandb(rest)
     raise SystemExit(f"unknown command: {command}")
 
 
