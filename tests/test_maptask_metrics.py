@@ -8,16 +8,19 @@ from analysis.task_metrics import compute_task_metrics
 from analysis.trace_parser import Trace
 
 
-def _maptask_trace(events: list[dict], summary: dict | None = None) -> Trace:
+def _maptask_trace(events: list[dict], summary: dict | None = None, *, roles: dict[str, str] | None = None) -> Trace:
+    manifest: dict = {
+        "config": {
+            "task": {"type": "maptask"},
+            "agents": [{"id": "A"}, {"id": "B"}],
+        }
+    }
+    if roles:
+        manifest["config"]["task"]["roles"] = roles
     return Trace(
         run_dir=Path("/tmp/maptask_test"),
         events=events,
-        manifest={
-            "config": {
-                "task": {"type": "maptask"},
-                "agents": [{"id": "A"}, {"id": "B"}],
-            }
-        },
+        manifest=manifest,
         summary=summary or {},
     )
 
@@ -99,3 +102,50 @@ def test_maptask_metrics_fallback_to_steps_without_summary() -> None:
     assert per_run["route_score"] == 9.0
     assert per_run["route_score_max"] == 90.0
     assert per_run["route_similarity"] == 0.1
+
+
+def test_maptask_revision_rate_from_follower_drawing_actions() -> None:
+    events = [
+        {
+            "event_type": "action_validated",
+            "actor_id": "B",
+            "payload": {"action": {"type": "draw"}},
+        },
+        {
+            "event_type": "action_validated",
+            "actor_id": "B",
+            "payload": {"action": {"type": "draw"}},
+        },
+        {
+            "event_type": "action_validated",
+            "actor_id": "B",
+            "payload": {"action": {"type": "draw"}},
+        },
+        {
+            "event_type": "action_validated",
+            "actor_id": "B",
+            "payload": {"action": {"type": "erase"}},
+        },
+        {
+            "event_type": "action_validated",
+            "actor_id": "B",
+            "payload": {"action": {"type": "undo"}},
+        },
+        {
+            "event_type": "action_validated",
+            "actor_id": "A",
+            "payload": {"action": {"type": "message"}},
+        },
+    ]
+    per_run, per_agent = compute_task_metrics(
+        _maptask_trace(events, roles={"A": "guider", "B": "follower"}),
+    )
+
+    assert per_run["follower_action_draw_count"] == 3.0
+    assert per_run["follower_action_erase_count"] == 1.0
+    assert per_run["follower_action_undo_count"] == 1.0
+    assert per_run["follower_action_reset_count"] == 0.0
+    assert per_run["revision_rate"] == 0.4
+    assert per_agent["B"]["revision_rate"] == 0.4
+    assert per_agent["B"]["action_draw_count"] == 3.0
+    assert "revision_rate" not in per_agent["A"]

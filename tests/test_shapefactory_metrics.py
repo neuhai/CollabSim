@@ -64,6 +64,43 @@ def test_shapefactory_trade_price_metrics_from_accept_payload() -> None:
     assert per_agent["B"]["avg_trade_price"] == 25.0
 
 
+def test_shapefactory_messages_per_successful_trade() -> None:
+    events = [
+        {
+            "event_type": "message_delivered",
+            "actor_id": "A",
+            "payload": {"content": "want to trade"},
+        },
+        {
+            "event_type": "message_delivered",
+            "actor_id": "B",
+            "payload": {"content": "sure"},
+        },
+        {
+            "event_type": "message_delivered",
+            "actor_id": "A",
+            "payload": {"content": "thanks"},
+        },
+        {
+            "event_type": "trade_offer_responded",
+            "actor_id": "B",
+            "payload": {
+                "response_type": "accept",
+                "initiator_id": "A",
+                "target_id": "B",
+                "price_per_unit": 25.0,
+            },
+        },
+    ]
+    per_run, per_agent = compute_task_metrics(_shapefactory_trace(events))
+
+    assert per_run["messages_sent_total"] == 3.0
+    assert per_run["total_successful_trades"] == 1.0
+    assert per_run["messages_per_successful_trade"] == 3.0
+    assert per_agent["A"]["messages_per_successful_trade"] == 2.0
+    assert per_agent["B"]["messages_per_successful_trade"] == 1.0
+
+
 def test_shapefactory_fulfill_order_aggregates_and_full_completion() -> None:
     trace = Trace(
         run_dir=Path("/tmp/shapefactory_fulfill"),

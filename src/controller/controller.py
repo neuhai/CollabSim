@@ -2607,13 +2607,21 @@ class ExperimentController:
         defaults = self._visibility_defaults_for_agent(agent_id)
         if not visibility and not defaults:
             task_raw = snapshot.get("task_state")
+            buffers_raw = snapshot.get("buffers")
+            task_patched = task_raw
+            buffers_patched = buffers_raw
             if isinstance(task_raw, dict):
                 task_patched = self._apply_private_fact_visibility(task_raw, agent_id)
                 task_patched = self._apply_maptask_canvas_visibility(task_patched, agent_id)
                 task_patched = self._apply_shapefactory_participant_visibility(task_patched, agent_id)
                 task_patched = self._apply_task_timing_filter(task_patched)
-                if task_patched is not task_raw:
-                    return {**snapshot, "task_state": task_patched}
+                buffers_patched = self._apply_daytrader_buffer_visibility(
+                    buffers_raw if isinstance(buffers_raw, dict) else {},
+                    agent_id,
+                    task_patched,
+                )
+            if task_patched is not task_raw or buffers_patched is not buffers_raw:
+                return {**snapshot, "task_state": task_patched, "buffers": buffers_patched}
             return snapshot
         filtered: dict[str, Any] = {}
         for section in ("task_state", "resources", "turn_state", "buffers"):
@@ -2623,6 +2631,17 @@ class ExperimentController:
                 section_value = self._apply_maptask_canvas_visibility(section_value, agent_id)
                 section_value = self._apply_shapefactory_participant_visibility(section_value, agent_id)
                 section_value = self._apply_task_timing_filter(section_value)
+            elif section == "buffers" and isinstance(section_value, dict):
+                task_for_buffers = snapshot.get("task_state")
+                if isinstance(filtered.get("task_state"), dict):
+                    task_for_buffers = filtered["task_state"]
+                elif isinstance(task_for_buffers, dict):
+                    task_for_buffers = self._apply_task_timing_filter(task_for_buffers)
+                section_value = self._apply_daytrader_buffer_visibility(
+                    section_value,
+                    agent_id,
+                    task_for_buffers if isinstance(task_for_buffers, dict) else {},
+                )
             allowed = visibility.get(section, []) if isinstance(visibility, dict) else []
             if not isinstance(allowed, list) or not allowed:
                 allowed = defaults.get(section, []) if isinstance(defaults, dict) else []
@@ -2672,6 +2691,46 @@ class ExperimentController:
                     key: copy.deepcopy(value) for key, value in row.items() if key in peer_public
                 }
         return {**task_state, "participants": redacted}
+
+    def _apply_daytrader_buffer_visibility(
+        self,
+        buffers: dict[str, Any],
+        viewer_id: str,
+        task_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Expose only the viewer's private DayTrader ledger entries in observation buffers."""
+
+        if task_state.get("task_type") != "daytrader":
+            return buffers
+        if not isinstance(buffers, dict):
+            return buffers
+
+        patched = dict(buffers)
+
+        private = buffers.get("daytrader_private_participants")
+        if isinstance(private, dict):
+            me = private.get(viewer_id)
+            patched["daytrader_private_participants"] = (
+                {viewer_id: copy.deepcopy(me)} if isinstance(me, dict) else {}
+            )
+
+        pool = buffers.get("daytrader_group_pool")
+        if isinstance(pool, dict):
+            my_contrib = pool.get(viewer_id)
+            if isinstance(my_contrib, (int, float)):
+                patched["daytrader_group_pool"] = {viewer_id: float(my_contrib)}
+            else:
+                patched["daytrader_group_pool"] = {}
+
+        round_start = buffers.get("daytrader_round_start_money")
+        if isinstance(round_start, dict):
+            baseline = round_start.get(viewer_id)
+            if isinstance(baseline, (int, float)):
+                patched["daytrader_round_start_money"] = {viewer_id: float(baseline)}
+            else:
+                patched["daytrader_round_start_money"] = {}
+
+        return patched
 
     def _apply_private_fact_visibility(self, task_state: dict[str, Any], agent_id: str) -> dict[str, Any]:
         if not self._is_asymmetric_visibility():

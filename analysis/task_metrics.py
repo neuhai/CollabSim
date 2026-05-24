@@ -127,6 +127,59 @@ def _last_order_progress_from_shapefactory_observations(
     return found
 
 
+_MAPTASK_FOLLOWER_DRAW_ACTIONS = frozenset({"draw", "erase", "undo", "reset"})
+
+
+def _maptask_follower_ids(trace: Trace) -> list[str]:
+    """Resolve MapTask follower agent ids from manifest or run summary."""
+    task_cfg = (trace.manifest.get("config") or {}).get("task") or {}
+    roles = task_cfg.get("roles") or {}
+    if isinstance(roles, dict):
+        followers = [aid for aid, role in roles.items() if role == "follower" and isinstance(aid, str)]
+        if followers:
+            return followers
+
+    config_agents = (trace.manifest.get("config") or {}).get("agents") or []
+    followers = [
+        a["id"]
+        for a in config_agents
+        if isinstance(a, dict) and a.get("role") == "follower" and isinstance(a.get("id"), str)
+    ]
+    if followers:
+        return followers
+
+    summary_per_agent = trace.summary.get("per_agent") or {}
+    return [
+        aid
+        for aid, data in summary_per_agent.items()
+        if isinstance(aid, str) and isinstance(data, dict) and data.get("role") == "follower"
+    ]
+
+
+def _follower_drawing_action_counts(
+    trace: Trace, follower_ids: set[str],
+) -> dict[str, int]:
+    """Count validated draw/erase/undo/reset actions by MapTask followers."""
+    counts = {action: 0 for action in _MAPTASK_FOLLOWER_DRAW_ACTIONS}
+    for e in trace.events_of_type("action_validated"):
+        aid = e.get("actor_id")
+        if not isinstance(aid, str) or aid not in follower_ids:
+            continue
+        action_type = ((e.get("payload") or {}).get("action") or {}).get("type")
+        if action_type in _MAPTASK_FOLLOWER_DRAW_ACTIONS:
+            counts[action_type] += 1
+    return counts
+
+
+def _revision_rate_from_drawing_counts(counts: dict[str, int]) -> float | None:
+    """Revision rate = 1 - draw / (draw + erase + undo + reset)."""
+    draw = counts.get("draw", 0)
+    total = sum(counts.get(action, 0) for action in _MAPTASK_FOLLOWER_DRAW_ACTIONS)
+    if total <= 0:
+        return None
+    return 1.0 - (draw / total)
+
+
 def _shapefactory_fulfilled_slots_by_agent(
     trace: Trace,
     agent_ids: list[str],
@@ -165,7 +218,8 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
       per-run   : total_successful_trades, trade_accept_rate,
                   avg_trade_price, session_avg_wealth, wealth_gini,
                   agents_fully_fulfilled_own_order_count,
-                  avg/min/max_fulfilled_order_slots_per_agent
+                  avg/min/max_fulfilled_order_slots_per_agent,
+                  messages_per_successful_trade
     """
     per_agent: dict[str, dict[str, float]] = defaultdict(dict)
     per_run: dict[str, float] = {}
@@ -269,6 +323,9 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
     msg_stats = _message_stats(trace.events)
     per_run["messages_sent_total"] = msg_stats["messages_sent"]
     per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
+    total_trades = float(per_run["total_successful_trades"])
+    if total_trades > 0:
+        per_run["messages_per_successful_trade"] = float(per_run["messages_sent_total"]) / total_trades
 
     # Action type distribution (validated actions only)
     action_counts_by_agent: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -299,6 +356,7 @@ def _shapefactory_metrics(trace: Trace) -> tuple[dict[str, float], dict[str, dic
             "messages_sent": msg_count,
             "avg_message_length_tokens": msgs["avg_message_length_tokens"] or 0.0,
             "trade_efficiency": float(trades) / msg_count if msg_count > 0 else 0.0,
+            "messages_per_successful_trade": msg_count / float(trades) if trades > 0 else 0.0,
             "fulfilled_order_slots": fulfilled_sl,
             "order_fully_fulfilled": 1.0 if fulfilled_sl >= float(shapes_order_target) else 0.0,
         }
@@ -576,7 +634,8 @@ def _maptask_metrics(trace: Trace) -> tuple[dict[str, Any], dict[str, dict[str, 
     Key metrics (score_board.txt-based):
       per-agent : messages_sent, avg_message_length_tokens, map_progress_updates
       per-run   : route_score, route_score_max, route_similarity, drawing_score_steps,
-                  drawing_score_final, map_progress_updates_total, communication_efficiency
+                  drawing_score_final, map_progress_updates_total, communication_efficiency,
+                  follower_draw/erase/undo/reset counts, revision_rate
     """
     per_agent: dict[str, dict[str, float]] = {}
     per_run: dict[str, Any] = {}
@@ -626,17 +685,33 @@ def _maptask_metrics(trace: Trace) -> tuple[dict[str, Any], dict[str, dict[str, 
         per_run["communication_efficiency"] = float(per_run["route_score"]) / total_msgs
     per_run.update(_run_message_aggregates(trace.events, trace.agent_ids))
 
+    follower_ids = set(_maptask_follower_ids(trace))
+    follower_drawing_counts = _follower_drawing_action_counts(trace, follower_ids)
+    for action_type, count in follower_drawing_counts.items():
+        per_run[f"follower_action_{action_type}_count"] = float(count)
+    revision_rate = _revision_rate_from_drawing_counts(follower_drawing_counts)
+    if revision_rate is not None:
+        per_run["revision_rate"] = revision_rate
+
     for aid in trace.agent_ids:
         msgs = _message_stats(trace.events, aid)
         upd = float(sum(
             1 for e in trace.events_by_actor(aid)
             if e.get("event_type") == "map_progress_updated"
         ))
-        per_agent[aid] = {
+        agent_data: dict[str, float] = {
             "messages_sent": msgs["messages_sent"],
             "avg_message_length_tokens": msgs["avg_message_length_tokens"] or 0.0,
             "map_progress_updates": upd,
         }
+        if aid in follower_ids:
+            follower_counts = _follower_drawing_action_counts(trace, {aid})
+            for action_type, count in follower_counts.items():
+                agent_data[f"action_{action_type}_count"] = float(count)
+            agent_revision = _revision_rate_from_drawing_counts(follower_counts)
+            if agent_revision is not None:
+                agent_data["revision_rate"] = agent_revision
+        per_agent[aid] = agent_data
 
     return per_run, per_agent
 
