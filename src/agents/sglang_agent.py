@@ -26,7 +26,9 @@ from src.agents.llm_conversation import (
     build_messages_for_request,
     clear_llm_chat_thread,
     commit_llm_turn,
+    finalize_probe_turn,
     init_llm_chat_thread,
+    prepare_probe_messages,
 )
 from typing import ClassVar
 from src.probe.probe import ProbeResponse
@@ -66,6 +68,7 @@ class SGLangAgent:
     protocol_context: dict[str, Any] | None = None
     decide_reveal: str | None = None
     communication_limits: str = ""
+    probe_context_mode: str = "ephemeral"
     sglang_host: str | None = None
     sglang_port: int | None = None
 
@@ -210,9 +213,9 @@ class SGLangAgent:
         pinv = self._llm_probe_invocation
         use_full = pinv == 0
         query = self._build_probe_prompt(prompt, construct, observation, use_full_prompt=use_full)
-        messages = build_messages_for_request(self, query)
+        messages = prepare_probe_messages(self, query)
         text = await self._call_sglang_async(messages)
-        commit_llm_turn(self, query, text)
+        finalize_probe_turn(self, query, text)
         self._llm_probe_invocation = pinv + 1
         parsed = _parse_json(text)
         answer = parsed.get("answer") if isinstance(parsed, dict) else text.strip()

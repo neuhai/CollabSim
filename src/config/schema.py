@@ -300,6 +300,10 @@ def validate_config_schema(config: Mapping[str, Any]) -> None:
             raise ConfigSchemaError("probe.questions must be a non-empty list when provided.")
         if not all(isinstance(item, str) and item for item in questions):
             raise ConfigSchemaError("probe.questions must contain non-empty strings.")
+    context_mode = probe.get("context_mode")
+    if context_mode is not None:
+        if not isinstance(context_mode, str) or context_mode.strip().lower() not in ("ephemeral", "shared"):
+            raise ConfigSchemaError("probe.context_mode must be ephemeral or shared when provided.")
 
     logging_cfg = config["logging"]
     _require_field(logging_cfg, "trace_schema_version", str)

@@ -16,8 +16,10 @@ from src.agents.llm_conversation import (
     chat_completion_text,
     clear_llm_chat_thread,
     commit_llm_turn,
+    finalize_probe_turn,
     flatten_messages_for_responses_input,
     init_llm_chat_thread,
+    prepare_probe_messages,
 )
 from src.probe.probe import ProbeResponse
 from src.utils.env import load_env_file, load_text_file
@@ -42,6 +44,7 @@ class OpenAIAgent:
     protocol_context: dict[str, Any] | None = None
     decide_reveal: str | None = None
     communication_limits: str = ""
+    probe_context_mode: str = "ephemeral"
 
     def __post_init__(self) -> None:
         load_env_file()
@@ -113,9 +116,9 @@ class OpenAIAgent:
         pinv = self._llm_probe_invocation
         use_full = pinv == 0
         query = self._build_probe_prompt(prompt, construct, observation, use_full_prompt=use_full)
-        messages = build_messages_for_request(self, query)
+        messages = prepare_probe_messages(self, query)
         text = self._call_openai(messages)
-        commit_llm_turn(self, query, text)
+        finalize_probe_turn(self, query, text)
         self._llm_probe_invocation = pinv + 1
         parsed = _parse_json(text)
         answer = parsed.get("answer") if isinstance(parsed, dict) else text.strip()

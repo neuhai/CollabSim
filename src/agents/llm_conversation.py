@@ -1,7 +1,11 @@
 """Per-agent OpenAI-style chat history for multi-turn API calls.
 
-Each agent keeps a single thread (action + probe exchanges in order). The full
-``messages`` list is sent on every inference so the model sees prior turns.
+Each agent keeps an **action thread** (``_llm_chat_messages``): committed game
+turns only. The full list is sent on every action inference.
+
+**Probe calls (default ``probe.context_mode: ephemeral``):** read the action
+thread for grounding but do **not** append probe Q&A to it. Legacy
+``context_mode: shared`` keeps the old behaviour (probes mixed into the thread).
 
 Optional cap: set env ``COLLABSIM_LLM_CHAT_MAX_MESSAGES`` to a positive integer to
 drop oldest messages when the thread exceeds that length (0 or unset = unlimited).
@@ -47,6 +51,33 @@ def trim_llm_chat_thread(messages: list[ChatMessage]) -> None:
 def build_messages_for_request(agent: Any, user_content: str) -> list[ChatMessage]:
     init_llm_chat_thread(agent)
     return [*agent._llm_chat_messages, {"role": "user", "content": user_content}]
+
+
+def probe_uses_shared_context(agent: Any) -> bool:
+    """True when probe Q&A should be committed into the action thread (legacy)."""
+
+    mode = getattr(agent, "probe_context_mode", "ephemeral")
+    if not isinstance(mode, str):
+        return False
+    return mode.strip().lower() == "shared"
+
+
+def build_messages_for_probe_request(agent: Any, user_content: str) -> list[ChatMessage]:
+    """Probe inference: read committed action turns, do not include prior probe turns."""
+
+    init_llm_chat_thread(agent)
+    return [*agent._llm_chat_messages, {"role": "user", "content": user_content}]
+
+
+def prepare_probe_messages(agent: Any, user_content: str) -> list[ChatMessage]:
+    if probe_uses_shared_context(agent):
+        return build_messages_for_request(agent, user_content)
+    return build_messages_for_probe_request(agent, user_content)
+
+
+def finalize_probe_turn(agent: Any, user_content: str, assistant_content: str) -> None:
+    if probe_uses_shared_context(agent):
+        commit_llm_turn(agent, user_content, assistant_content)
 
 
 def commit_llm_turn(agent: Any, user_content: str, assistant_content: str) -> None:

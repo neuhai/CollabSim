@@ -62,6 +62,7 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
     seed = config.get("experiment", {}).get("seed")
     protocol_context = _build_protocol_context(config)
     communication_limits = _communication_limits_for_prompt(config)
+    probe_context_mode = _probe_context_mode_from_config(config)
     agents: dict[str, Any] = {}
     for agent in agents_cfg:
         if not isinstance(agent, dict):
@@ -131,6 +132,7 @@ def build_agents(config: dict[str, Any]) -> dict[str, Any]:
             protocol_context=protocol_context,
             decide_reveal=decide_reveal if isinstance(decide_reveal, str) else None,
             communication_limits=communication_limits,
+            probe_context_mode=probe_context_mode,
         )
         if provider in ("azure_openai", "azure"):
             agents[agent_id] = AzureOpenAIAgent(**kwargs)
@@ -275,6 +277,17 @@ def _communication_level_summary(config: dict[str, Any]) -> str:
         parts.append(f"At most {per_turn} message action(s) per controller turn in this stepping mode.")
 
     return " ".join(parts)
+
+
+def _probe_context_mode_from_config(config: dict[str, Any]) -> str:
+    probe = config.get("probe", {})
+    if isinstance(probe, dict):
+        mode = probe.get("context_mode")
+        if isinstance(mode, str):
+            normalized = mode.strip().lower()
+            if normalized in ("ephemeral", "shared"):
+                return normalized
+    return "ephemeral"
 
 
 def _communication_limits_for_prompt(config: dict[str, Any]) -> str:
