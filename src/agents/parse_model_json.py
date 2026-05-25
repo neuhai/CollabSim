@@ -30,14 +30,20 @@ def parse_json_dict(text: str) -> dict[str, Any]:
             return
         seen.add(stripped)
         candidates.append(stripped)
+        denorm = _denormalize_template_braces(stripped)
+        if denorm is not None:
+            _add(denorm)
 
     stripped = text.strip()
     _add(stripped)
 
-    for block in _CODE_FENCE_RE.findall(text):
+    denorm_text = _denormalize_template_braces(text)
+    scan_text = denorm_text if denorm_text is not None else text
+
+    for block in _CODE_FENCE_RE.findall(scan_text):
         _add(block)
 
-    for snippet in _brace_delimited_snippets(text):
+    for snippet in _brace_delimited_snippets(scan_text):
         _add(snippet)
 
     parsed_dicts: list[dict[str, Any]] = []
@@ -80,6 +86,17 @@ def _loads_dict(raw: str) -> dict[str, Any] | None:
             pass
 
     return None
+
+
+def _denormalize_template_braces(raw: str) -> str | None:
+    """Convert prompt-style ``{{`` / ``}}`` escapes to JSON ``{`` / ``}``."""
+
+    if "{{" not in raw and "}}" not in raw:
+        return None
+    denorm = raw.replace("{{", "{").replace("}}", "}")
+    if denorm == raw:
+        return None
+    return denorm
 
 
 def _peel_double_brace_wrapper(raw: str) -> str | None:

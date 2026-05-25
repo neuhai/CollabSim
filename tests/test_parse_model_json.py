@@ -54,3 +54,23 @@ def test_parse_nested_brace_wrapper_does_not_crash() -> None:
     raw = '{ { "action": {"type": "do_nothing", "payload": {}}, "rationale": "x" } }'
     parsed = parse_json_dict(raw)
     assert parsed["action"]["type"] == "do_nothing"
+
+
+def test_parse_template_doubled_braces_from_prompt_examples() -> None:
+    raw = (
+        '{{\n'
+        '  "action": {{\n'
+        '    "type": "message",\n'
+        '    "payload": {{\n'
+        '      "channel": "direct",\n'
+        '      "recipients": ["B"],\n'
+        '      "content": "Start at S.",\n'
+        '      "content_type": "text"\n'
+        '    }}\n'
+        '  }},\n'
+        '  "rationale": "Initial instruction."\n'
+        '}}'
+    )
+    parsed = parse_json_dict(raw)
+    assert parsed["action"]["type"] == "message"
+    assert parsed["action"]["payload"]["channel"] == "direct"
