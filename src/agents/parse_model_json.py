@@ -58,9 +58,26 @@ def parse_json_dict(text: str) -> dict[str, Any]:
     for key in _PREFERRED_KEYS:
         for parsed in reversed(parsed_dicts):
             if key in parsed:
-                return parsed
+                return _coerce_action_envelope(parsed)
 
-    return parsed_dicts[-1]
+    return _coerce_action_envelope(parsed_dicts[-1])
+
+
+def _coerce_action_envelope(parsed: dict[str, Any]) -> dict[str, Any]:
+    """If the model returned a bare action object, wrap it as ``{"action": ...}``."""
+
+    if not isinstance(parsed, dict):
+        return {}
+    if "action" in parsed or "actions" in parsed:
+        return parsed
+    action_type = parsed.get("type")
+    if isinstance(action_type, str) and action_type and "payload" in parsed:
+        envelope: dict[str, Any] = {"action": {"type": action_type, "payload": parsed.get("payload", {})}}
+        rationale = parsed.get("rationale")
+        if isinstance(rationale, str) and rationale:
+            envelope["rationale"] = rationale
+        return envelope
+    return parsed
 
 
 def _loads_dict(raw: str) -> dict[str, Any] | None:
@@ -89,9 +106,13 @@ def _loads_dict(raw: str) -> dict[str, Any] | None:
 
 
 def _denormalize_template_braces(raw: str) -> str | None:
-    """Convert prompt-style ``{{`` / ``}}`` escapes to JSON ``{`` / ``}``."""
+    """Convert prompt-style ``{{`` / ``}}`` escapes to JSON ``{`` / ``}``.
 
-    if "{{" not in raw and "}}" not in raw:
+    Only runs when the model copied doubled braces from prompt examples (``{{`` present).
+    Normal nested JSON uses ``}}`` to close two objects and must not be altered.
+    """
+
+    if "{{" not in raw:
         return None
     denorm = raw.replace("{{", "{").replace("}}", "}")
     if denorm == raw:

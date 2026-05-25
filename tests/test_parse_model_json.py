@@ -74,3 +74,25 @@ def test_parse_template_doubled_braces_from_prompt_examples() -> None:
     parsed = parse_json_dict(raw)
     assert parsed["action"]["type"] == "message"
     assert parsed["action"]["payload"]["channel"] == "direct"
+
+
+def test_parse_prose_then_json_fence_with_nested_closing_braces() -> None:
+    raw = (
+        "Analysis with it's and 'S' at [6, 34] ...\n\n"
+        "Here's my action:\n\n"
+        "```json\n"
+        "{\n"
+        '  "action": {"type": "draw", "payload": {"cells": [[7, 34]]}},\n'
+        '  "rationale": "Starting by moving down from \'S\' at [6, 34] as it\'s valid."\n'
+        "}\n"
+        "```"
+    )
+    parsed = parse_json_dict(raw)
+    assert parsed["action"]["type"] == "draw"
+    assert parsed["action"]["payload"]["cells"] == [[7, 34]]
+
+
+def test_coerce_bare_action_object() -> None:
+    raw = '{"type": "draw", "payload": {"cells": [[7, 34]]}}'
+    parsed = parse_json_dict(raw)
+    assert parsed["action"]["type"] == "draw"
