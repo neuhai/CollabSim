@@ -9,8 +9,6 @@
 #   - --retry-failed: re-run incomplete conditions even if partial actions.jsonl exists.
 #   - --list-failed: print incomplete conditions and exit (no runs).
 #   - Runs pending conditions in parallel (--jobs N, default: all conditions at once).
-#   - task=maptask without --collaboration: default --conditions baseline,bandwidth_max_words_5 --jobs 1
-#     (output dirs unchanged: experiments/study_conditions/maptask/<condition>/).
 #   - After the batch finishes, uploads results to W&B as a directory artifact (disable with --no-wandb-upload).
 #   - --collaboration: append prompts/collaboration_module.md to each agent's initial prompt;
 #     results are written under <condition>_collab output folders.
@@ -235,14 +233,6 @@ fi
 
 if [[ "$COLLABORATION" == true ]]; then
   CLI_EXTRA+=(--collaboration)
-fi
-
-# maptask default batch: two conditions, no collab, original output paths from YAML.
-if [[ "$TASK" == "maptask" && "$COLLABORATION" != true && -z "$CONDITIONS_CSV" ]]; then
-  CONDITIONS_CSV="baseline,bandwidth_max_words_5"
-  if [[ "$JOBS" -le 0 ]]; then
-    JOBS=1
-  fi
 fi
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
