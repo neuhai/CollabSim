@@ -65,25 +65,57 @@ def _loads_dict(raw: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         pass
 
-    try:
-        parsed = ast.literal_eval(raw)
-        if isinstance(parsed, dict):
-            return parsed
-    except (SyntaxError, ValueError):
-        pass
+    peeled = _peel_double_brace_wrapper(raw)
+    if peeled is not None and peeled != raw:
+        inner = _loads_dict(peeled)
+        if inner is not None:
+            return inner
+
+    if _looks_like_python_dict(raw):
+        try:
+            parsed = ast.literal_eval(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
+            pass
 
     return None
+
+
+def _peel_double_brace_wrapper(raw: str) -> str | None:
+    """If output looks like ``{ { ... } }``, return the inner ``{ ... }`` snippet."""
+
+    stripped = raw.strip()
+    if not re.match(r"^\{\s*\{", stripped):
+        return None
+    inner_start = stripped.find("{", 1)
+    if inner_start == -1:
+        return None
+    inner_snips = _brace_delimited_snippets(stripped[inner_start:])
+    if inner_snips:
+        return inner_snips[0]
+    return None
+
+
+def _looks_like_python_dict(raw: str) -> bool:
+    """Skip patterns that ast treats as set literals, e.g. ``{ {...} }``."""
+
+    stripped = raw.strip()
+    if not stripped.startswith("{"):
+        return False
+    # ``{ { ... } }`` is a set literal in Python, not a dict — literal_eval raises TypeError.
+    if re.match(r"\{\s*\{", stripped):
+        return False
+    return ":" in stripped
 
 
 def _brace_delimited_snippets(text: str) -> list[str]:
     """Find balanced ``{...}`` regions, respecting JSON double-quoted strings."""
 
     snippets: list[str] = []
-    i = 0
     length = len(text)
-    while i < length:
+    for i in range(length):
         if text[i] != "{":
-            i += 1
             continue
         start = i
         depth = 0
@@ -109,8 +141,6 @@ def _brace_delimited_snippets(text: str) -> list[str]:
                 if depth == 0:
                     closed_at = j
                     break
-        if closed_at is None:
-            break
-        snippets.append(text[start : closed_at + 1])
-        i = closed_at + 1
+        if closed_at is not None:
+            snippets.append(text[start : closed_at + 1])
     return snippets

@@ -48,3 +48,9 @@ def test_parse_prefers_action_dict_when_multiple_objects() -> None:
 
 def test_parse_empty_when_no_dict() -> None:
     assert parse_json_dict("no structured output here") == {}
+
+
+def test_parse_nested_brace_wrapper_does_not_crash() -> None:
+    raw = '{ { "action": {"type": "do_nothing", "payload": {}}, "rationale": "x" } }'
+    parsed = parse_json_dict(raw)
+    assert parsed["action"]["type"] == "do_nothing"
