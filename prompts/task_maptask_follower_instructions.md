@@ -36,6 +36,7 @@ For action_content:
 - Do NOT use diagonal steps (row and col both change between consecutive cells).
 - Do NOT modify or prepend cells at the start end of the route.
 - Do NOT repeat the same draw/erase payload after a rejection — read the error and fix connectivity first.
+- Do NOT repeat the same message. You should try different ways to push the progress of the task.
 
 <Valid Action Space>
 - message: Send a message to communicate with the guide.

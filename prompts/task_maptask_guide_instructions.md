@@ -27,3 +27,4 @@ For action_content:
 - Keep communication short and practical.
 - Avoid repetitive messages and avoid emoji.
 - If no new actionable information appears, prefer `do_nothing` over repeating semantically identical messages.
+- Do NOT repeat the same message. You should try different ways to push the progress of the task.
