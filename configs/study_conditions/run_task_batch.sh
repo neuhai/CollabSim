@@ -2,13 +2,15 @@
 # Batch-run all *.yml conditions for one study task, or all four tasks at once.
 #
 # Usage:
-#   run_task_batch.sh <task|all> [smoke|one-turn|check] [--collaboration [true]] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]
+#   run_task_batch.sh <task|all> [smoke|one-turn|check] [--collaboration [true]] [--conditions a,b] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]
 #
 # Features:
 #   - Skips conditions that already have results (resume-friendly); use --force to re-run all.
 #   - --retry-failed: re-run incomplete conditions even if partial actions.jsonl exists.
 #   - --list-failed: print incomplete conditions and exit (no runs).
 #   - Runs pending conditions in parallel (--jobs N, default: all conditions at once).
+#   - task=maptask without --collaboration: default --conditions baseline,bandwidth_max_words_5 --jobs 1
+#     (output dirs unchanged: experiments/study_conditions/maptask/<condition>/).
 #   - After the batch finishes, uploads results to W&B as a directory artifact (disable with --no-wandb-upload).
 #   - --collaboration: append prompts/collaboration_module.md to each agent's initial prompt;
 #     results are written under <condition>_collab output folders.
@@ -22,7 +24,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]" >&2
+  echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--conditions slug1,slug2] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]" >&2
   exit 2
 fi
 
@@ -50,6 +52,7 @@ WANDB_UPLOAD=true
 ENSURE_DIRS_ONLY=false
 JOBS="${COLLABSIM_BATCH_JOBS:-0}"
 WANDB_PROJECT="${WANDB_PROJECT:-collabsim}"
+CONDITIONS_CSV=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -85,6 +88,14 @@ while [[ $# -gt 0 ]]; do
       JOBS="${1#*=}"
       shift
       ;;
+    --conditions)
+      CONDITIONS_CSV="$2"
+      shift 2
+      ;;
+    --conditions=*)
+      CONDITIONS_CSV="${1#*=}"
+      shift
+      ;;
     --force)
       FORCE=true
       shift
@@ -107,7 +118,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]" >&2
+      echo "Usage: $0 <task|all> [smoke] [--collaboration [true]] [--conditions slug1,slug2] [--jobs N] [--force] [--retry-failed] [--list-failed] [--no-wandb-upload]" >&2
       exit 2
       ;;
   esac
@@ -226,6 +237,14 @@ if [[ "$COLLABORATION" == true ]]; then
   CLI_EXTRA+=(--collaboration)
 fi
 
+# maptask default batch: two conditions, no collab, original output paths from YAML.
+if [[ "$TASK" == "maptask" && "$COLLABORATION" != true && -z "$CONDITIONS_CSV" ]]; then
+  CONDITIONS_CSV="baseline,bandwidth_max_words_5"
+  if [[ "$JOBS" -le 0 ]]; then
+    JOBS=1
+  fi
+fi
+
 STAMP="$(date +%Y%m%d_%H%M%S)"
 if [[ "$MODE" == "smoke" ]]; then
   STAMP="${STAMP}_smoke10step"
@@ -309,6 +328,17 @@ condition_should_skip() {
   uv run python "$HELPERS" "${skip_args[@]}"
 }
 
+condition_in_filter() {
+  local slug="$1"
+  if [[ -z "$CONDITIONS_CSV" ]]; then
+    return 0
+  fi
+  case ",${CONDITIONS_CSV}," in
+    *,"${slug}",*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 run_one_condition() {
   local cfg="$1"
   local slug="$2"
@@ -361,6 +391,9 @@ skipped=0
 BATCH_LOG=""
 for cfg in "${configs[@]}"; do
   slug="$(basename "$cfg" .yml)"
+  if ! condition_in_filter "$slug"; then
+    continue
+  fi
   out="$(resolve_condition_out_dir "$cfg" "$slug")"
   if [[ -z "$BATCH_LOG" ]]; then
     mkdir -p "$(dirname "$out")"
@@ -370,6 +403,7 @@ for cfg in "${configs[@]}"; do
       echo "mode=${MODE}"
       echo "task=${TASK}"
       echo "collaboration=${COLLABORATION}"
+      echo "conditions=${CONDITIONS_CSV:-all}"
       echo "retry_failed=${RETRY_FAILED}"
       echo "jobs=${JOBS}"
       echo "force=${FORCE}"
