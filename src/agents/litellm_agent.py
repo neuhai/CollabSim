@@ -38,8 +38,7 @@ from src.agents.llm_conversation import (
 from src.probe.probe import ProbeResponse
 from src.utils.env import load_env_file
 
-# Reuse JSON parsing aligned with other agents.
-from src.agents.sglang_agent import _parse_json
+from src.agents.parse_model_json import parse_json_dict
 
 
 @dataclass
@@ -90,7 +89,7 @@ class LiteLLMAgent:
         text = self._call_litellm(messages)
         commit_llm_turn(self, prompt, text)
         self._llm_action_invocation = inv + 1
-        parsed = _parse_json(text)
+        parsed = parse_json_dict(text)
         if not parsed:
             action = self._fallback_action("parse_failure")
             return ActionProposal(
@@ -162,7 +161,7 @@ class LiteLLMAgent:
         text = self._call_litellm(messages)
         finalize_probe_turn(self, query, text)
         self._llm_probe_invocation = pinv + 1
-        parsed = _parse_json(text)
+        parsed = parse_json_dict(text)
         answer = parsed.get("answer") if isinstance(parsed, dict) else text.strip()
         confidence = parsed.get("confidence") if isinstance(parsed, dict) else None
         structured_fields = parsed.get("structured_fields") if isinstance(parsed, dict) else None

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import json
 import os
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -30,7 +30,7 @@ from src.agents.llm_conversation import (
     init_llm_chat_thread,
     prepare_probe_messages,
 )
-from typing import ClassVar
+from src.agents.parse_model_json import parse_json_dict
 from src.probe.probe import ProbeResponse
 from src.utils.env import load_env_file
 
@@ -148,7 +148,7 @@ class SGLangAgent:
         text = await self._call_sglang_async(messages)
         commit_llm_turn(self, prompt, text)
         self._llm_action_invocation = inv + 1
-        parsed = _parse_json(text)
+        parsed = parse_json_dict(text)
         if not parsed:
             action = self._fallback_action("parse_failure")
             return ActionProposal(
@@ -217,7 +217,7 @@ class SGLangAgent:
         text = await self._call_sglang_async(messages)
         finalize_probe_turn(self, query, text)
         self._llm_probe_invocation = pinv + 1
-        parsed = _parse_json(text)
+        parsed = parse_json_dict(text)
         answer = parsed.get("answer") if isinstance(parsed, dict) else text.strip()
         confidence = parsed.get("confidence") if isinstance(parsed, dict) else None
         structured_fields = parsed.get("structured_fields") if isinstance(parsed, dict) else None
@@ -418,27 +418,6 @@ class SGLangAgent:
 # ------------------------------------------------------------------
 # Module-level helpers
 # ------------------------------------------------------------------
-
-def _parse_json(text: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        return {}
-    snippet = text[start : end + 1]
-    try:
-        parsed = json.loads(snippet)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        return {}
-    return {}
-
 
 def _render_template(template: str, values: dict[str, str]) -> str:
     rendered = template
