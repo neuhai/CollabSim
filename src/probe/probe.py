@@ -25,6 +25,7 @@ class ProbeResponse:
     answer: Any
     confidence: float | None = None
     structured_fields: dict[str, Any] | None = None
+    raw_response: str | None = None
 
 
 class ProbeInterface:
@@ -52,6 +53,7 @@ class ProbeInterface:
         answer: Any,
         confidence: float | None = None,
         structured_fields: dict[str, Any] | None = None,
+        raw_response: str | None = None,
     ) -> ProbeResponse:
         if confidence is not None and not (0.0 <= confidence <= 1.0):
             raise ValueError("confidence must be within [0, 1]")
@@ -60,4 +62,5 @@ class ProbeInterface:
             answer=answer,
             confidence=confidence,
             structured_fields=structured_fields,
+            raw_response=raw_response,
         )

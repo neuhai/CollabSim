@@ -24,6 +24,7 @@ from src.data.logging import (
     append_trace,
     build_run_manifest,
     log_probe_records,
+    log_probe_raw_records,
     write_metrics,
     write_run_manifest,
     write_run_summary,
@@ -1650,6 +1651,49 @@ class ExperimentController:
             return set()
         return {event for event in events if isinstance(event, str) and event}
 
+    def _log_probe_raw(
+        self,
+        *,
+        agent_id: str,
+        batch_probe_id: str,
+        agent_records: list[dict[str, Any]],
+        batch_prompt: str,
+        outcome: str,
+        response: ProbeResponse | None = None,
+        parsed_probe_ids: list[str] | None = None,
+        api_error: str | None = None,
+    ) -> None:
+        if self.run_paths is None:
+            return
+        probe_ids = [
+            item
+            for item in (record.get("probe_id") for record in agent_records)
+            if isinstance(item, str) and item
+        ]
+        template_ids = sorted(
+            {
+                item
+                for item in (record.get("template_id") for record in agent_records)
+                if isinstance(item, str) and item
+            }
+        )
+        record: dict[str, Any] = {
+            "type": "probe_raw",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "step_index": self.state.step_index,
+            "agent_id": agent_id,
+            "batch_probe_id": batch_probe_id,
+            "probe_ids": probe_ids,
+            "template_ids": template_ids,
+            "batch_prompt": batch_prompt,
+            "outcome": outcome,
+            "raw_response": response.raw_response if response is not None else None,
+            "parsed_answer": response.answer if response is not None else None,
+            "parsed_probe_ids": parsed_probe_ids,
+            "api_error": api_error,
+        }
+        log_probe_raw_records(self.run_paths, [record])
+
     def _collect_probe_responses(
         self,
         records: list[dict[str, Any]],
@@ -1693,8 +1737,9 @@ class ExperimentController:
             prompt = self._build_batched_probe_prompt(agent_records)
             request_payloads.append((agent_id, agent_records, observation, prompt))
 
-        responses_by_agent: dict[str, Any] = {}
+        responses_by_agent: dict[str, ProbeResponse] = {}
         failed_agents: set[str] = set()
+        probe_api_errors: dict[str, str] = {}
         max_workers = min(self._max_concurrent_requests(), len(request_payloads))
         if max_workers <= 1:
             for agent_id, _agent_records, observation, prompt in request_payloads:
@@ -1709,8 +1754,9 @@ class ExperimentController:
                         construct="batched_probe",
                         observation=observation,
                     )
-                except Exception:
+                except Exception as exc:
                     failed_agents.add(agent_id)
+                    probe_api_errors[agent_id] = str(exc)
         else:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {}
@@ -1732,13 +1778,23 @@ class ExperimentController:
                     agent_id = futures[future]
                     try:
                         responses_by_agent[agent_id] = future.result()
-                    except Exception:
+                    except Exception as exc:
                         failed_agents.add(agent_id)
+                        probe_api_errors[agent_id] = str(exc)
 
-        for agent_id, agent_records, _observation, _prompt in request_payloads:
+        for agent_id, agent_records, _observation, batch_prompt in request_payloads:
+            batch_probe_id = f"probe_batch_{self.state.step_index}_{agent_id}"
             stats["processed"] += 1
             if agent_id in failed_agents:
                 stats["error"] += 1
+                self._log_probe_raw(
+                    agent_id=agent_id,
+                    batch_probe_id=batch_probe_id,
+                    agent_records=agent_records,
+                    batch_prompt=batch_prompt,
+                    outcome="api_error",
+                    api_error=probe_api_errors.get(agent_id, "unknown"),
+                )
                 self._notify_probe_progress(stats)
                 continue
 
@@ -1746,6 +1802,14 @@ class ExperimentController:
             parsed = self._parse_batched_probe_response(response)
             if parsed is None:
                 stats["error"] += 1
+                self._log_probe_raw(
+                    agent_id=agent_id,
+                    batch_probe_id=batch_probe_id,
+                    agent_records=agent_records,
+                    batch_prompt=batch_prompt,
+                    outcome="parse_failed",
+                    response=response,
+                )
                 self._notify_probe_progress(stats)
                 continue
 
@@ -1784,8 +1848,26 @@ class ExperimentController:
                     continue
             if logged_any_response and not had_validation_error:
                 stats["success"] += 1
+                self._log_probe_raw(
+                    agent_id=agent_id,
+                    batch_probe_id=batch_probe_id,
+                    agent_records=agent_records,
+                    batch_prompt=batch_prompt,
+                    outcome="success",
+                    response=response,
+                    parsed_probe_ids=sorted(parsed.keys()),
+                )
             else:
                 stats["error"] += 1
+                self._log_probe_raw(
+                    agent_id=agent_id,
+                    batch_probe_id=batch_probe_id,
+                    agent_records=agent_records,
+                    batch_prompt=batch_prompt,
+                    outcome="validation_failed",
+                    response=response,
+                    parsed_probe_ids=sorted(parsed.keys()),
+                )
             self._notify_probe_progress(stats)
         return stats
 

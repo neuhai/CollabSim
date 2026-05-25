@@ -170,6 +170,7 @@ class LiteLLMAgent:
             answer=answer,
             confidence=confidence if isinstance(confidence, (int, float)) else None,
             structured_fields=structured_fields if isinstance(structured_fields, dict) else None,
+            raw_response=text,
         )
 
     def _call_litellm(self, messages: list[dict[str, str]]) -> str:

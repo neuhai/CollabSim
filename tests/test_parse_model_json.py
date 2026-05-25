@@ -96,3 +96,18 @@ def test_coerce_bare_action_object() -> None:
     raw = '{"type": "draw", "payload": {"cells": [[7, 34]]}}'
     parsed = parse_json_dict(raw)
     assert parsed["action"]["type"] == "draw"
+
+
+def test_parse_batched_probe_envelope_not_last_response_row() -> None:
+    raw = (
+        '{"answer":{"responses":['
+        '{"probe_id":"probe_2_1","answer":"first","confidence":1.0,"structured_fields":{}},'
+        '{"probe_id":"probe_2_2","answer":"second","confidence":0.8,"structured_fields":{}},'
+        '{"probe_id":"probe_2_3","answer":"third","confidence":0.9,"structured_fields":{}}'
+        "]}}"
+    )
+    parsed = parse_json_dict(raw)
+    assert isinstance(parsed.get("answer"), dict)
+    responses = parsed["answer"]["responses"]
+    assert len(responses) == 3
+    assert responses[0]["probe_id"] == "probe_2_1"

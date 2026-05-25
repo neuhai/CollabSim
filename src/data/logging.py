@@ -27,6 +27,10 @@ class RunPaths:
         return self.run_dir / "probes.jsonl"
 
     @property
+    def probe_raw_path(self) -> Path:
+        return self.run_dir / "probe_raw.jsonl"
+
+    @property
     def actions_path(self) -> Path:
         return self.run_dir / "actions.jsonl"
 
@@ -126,6 +130,12 @@ def log_probe_records(paths: RunPaths, records: Iterable[dict[str, Any]]) -> Non
     """Append probe records to the probes.jsonl file."""
 
     append_jsonl(paths.probes_path, records)
+
+
+def log_probe_raw_records(paths: RunPaths, records: Iterable[dict[str, Any]]) -> None:
+    """Append probe debug records (model raw text + parse outcome) to probe_raw.jsonl."""
+
+    append_jsonl(paths.probe_raw_path, records, indent=None)
 
 
 def write_run_manifest(paths: RunPaths, manifest: dict[str, Any]) -> None:

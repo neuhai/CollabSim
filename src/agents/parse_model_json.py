@@ -15,6 +15,17 @@ _CODE_FENCE_RE = re.compile(
 _PREFERRED_KEYS = ("action", "actions", "answer", "structured_fields", "rationale")
 
 
+def _is_batched_probe_envelope(parsed: dict[str, Any]) -> bool:
+    if isinstance(parsed.get("responses"), list):
+        return True
+    answer = parsed.get("answer")
+    return isinstance(answer, dict) and isinstance(answer.get("responses"), list)
+
+
+def _is_probe_response_row(parsed: dict[str, Any]) -> bool:
+    return isinstance(parsed.get("probe_id"), str) and "answer" in parsed
+
+
 def parse_json_dict(text: str) -> dict[str, Any]:
     """Return the best matching dict parsed from *text*, or ``{}`` if none found."""
 
@@ -55,12 +66,24 @@ def parse_json_dict(text: str) -> dict[str, Any]:
     if not parsed_dicts:
         return {}
 
+    for parsed in parsed_dicts:
+        if _is_batched_probe_envelope(parsed):
+            return _coerce_action_envelope(parsed)
+
     for key in _PREFERRED_KEYS:
         for parsed in reversed(parsed_dicts):
-            if key in parsed:
-                return _coerce_action_envelope(parsed)
+            if key not in parsed:
+                continue
+            if key == "answer" and _is_probe_response_row(parsed):
+                continue
+            return _coerce_action_envelope(parsed)
 
-    return _coerce_action_envelope(parsed_dicts[-1])
+    for parsed in parsed_dicts:
+        coerced = _coerce_action_envelope(parsed)
+        if "action" in coerced or "actions" in coerced:
+            return coerced
+
+    return _coerce_action_envelope(parsed_dicts[0])
 
 
 def _coerce_action_envelope(parsed: dict[str, Any]) -> dict[str, Any]:

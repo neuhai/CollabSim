@@ -226,6 +226,7 @@ class SGLangAgent:
             answer=answer,
             confidence=confidence if isinstance(confidence, (int, float)) else None,
             structured_fields=structured_fields if isinstance(structured_fields, dict) else None,
+            raw_response=text,
         )
 
     # ------------------------------------------------------------------
