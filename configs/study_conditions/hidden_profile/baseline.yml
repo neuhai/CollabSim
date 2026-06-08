@@ -15,9 +15,9 @@ prompts:
   persona_profiles: "prompts/persona_profiles.json"
 
 agents:
-  - {id: "A", role: "planner", model: {provider: "azure", name: "gpt-5.5", temperature: 0.2}}
-  - {id: "B", role: "analyst", model: {provider: "azure", name: "gpt-5.5", temperature: 0.2}}
-  - {id: "C", role: "planner", model: {provider: "azure", name: "gpt-5.5", temperature: 0.2}}
+  - {id: "A", role: "planner", model: {provider: "litellm", name: "gpt-4o", temperature: 0.2}}
+  - {id: "B", role: "analyst", model: {provider: "litellm", name: "gpt-4o", temperature: 0.2}}
+  - {id: "C", role: "planner", model: {provider: "litellm", name: "gpt-4o", temperature: 0.2}}
 
 action_space:
   enabled: ["message", "decide", "do_nothing"]

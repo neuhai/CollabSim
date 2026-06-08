@@ -17,20 +17,20 @@ agents:
   - id: "A"
     role: "investor"
     model:
-      provider: "azure"
-      name: "gpt-5.3-codex"
+      provider: "litellm"
+      name: "gpt-4o"
       temperature: 0.0
   - id: "B"
     role: "investor"
     model:
-      provider: "azure"
-      name: "gpt-5.3-codex"
+      provider: "litellm"
+      name: "gpt-4o"
       temperature: 0.0
   - id: "C"
     role: "investor"
     model:
-      provider: "azure"
-      name: "gpt-5.3-codex"
+      provider: "litellm"
+      name: "gpt-4o"
       temperature: 0.0
 
 action_space:

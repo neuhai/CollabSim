@@ -98,7 +98,7 @@ class SGLangAgent:
         if not self._host:
             raise ValueError(
                 "SGLANG_HOST is empty. Set SGLANG_HOST=127.0.0.1 (and SGLANG_PORT) in "
-                "CollabSimExp/.env, then run from the repo root. If a parent shell exported "
+                ".env at the repo root, then run from the repo root. If a parent shell exported "
                 "an empty SGLANG_HOST, run: unset SGLANG_HOST && set -a && source .env && set +a"
             )
         init_llm_chat_thread(self)

@@ -113,6 +113,19 @@ MODELS: list[tuple[str, Path | None]] = [
     ("Llama", None),
 ]
 
+# Multi-model experiment layout under experiments/final_res (and copies).
+MODEL_SPECS: list[tuple[str, str]] = [
+    ("Llama", "llama"),
+    ("Qwen", "qwen"),
+    ("GPT", "gpt"),
+    ("Claude", "claude"),
+]
+
+
+def model_group_dir(data_root: Path, model_slug: str, *, collab: bool) -> Path:
+    mode = "collab" if collab else "persona"
+    return data_root / f"{model_slug}_{mode}"
+
 
 def condition_slug_to_label(slug: str) -> str:
     if slug == BASELINE_CONDITION:

@@ -11,6 +11,7 @@ env/
 
 # Local experiment outputs
 experiments/
+analysis_output/
 
 # WandB local run files
 wandb/

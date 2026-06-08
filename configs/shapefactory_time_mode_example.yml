@@ -15,12 +15,12 @@ prompts:
   persona_profiles: "prompts/persona_profiles.json"
 
 agents:
-  - {id: "A", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "B", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "C", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "D", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "E", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
-  - {id: "F", model: {provider: "azure", name: "gpt-5.4", temperature: 0.0}}
+  - {id: "A", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "B", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "C", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "D", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "E", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "F", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
 
 action_space:
   enabled:

@@ -21,14 +21,14 @@ agents:
   - id: "A"
     role: "guider"
     model:
-      provider: "azure"
-      name: "gpt-5.3-codex"
+      provider: "litellm"
+      name: "gpt-4o"
       temperature: 0.0
   - id: "B"
     role: "follower"
     model:
-      provider: "azure"
-      name: "gpt-5.3-codex"
+      provider: "litellm"
+      name: "gpt-4o"
       temperature: 0.0
 
 action_space:

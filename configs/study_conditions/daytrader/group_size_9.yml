@@ -14,15 +14,15 @@ prompts:
   persona_profiles: "prompts/persona_profiles.json"
 
 agents:
-  - {id: "A", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "B", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "C", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "D", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "E", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "F", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "G", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "H", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "I", role: "investor", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
+  - {id: "A", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "B", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "C", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "D", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "E", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "F", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "G", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "H", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "I", role: "investor", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
 
 action_space:
   enabled: ["message", "make_individual_investment", "make_group_investment", "do_nothing"]

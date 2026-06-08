@@ -18,8 +18,8 @@ prompts:
   persona_profiles: "prompts/persona_profiles.json"
 
 agents:
-  - {id: "A", role: "guider", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
-  - {id: "B", role: "follower", model: {provider: "azure", name: "gpt-5.5", temperature: 0.0}}
+  - {id: "A", role: "guider", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
+  - {id: "B", role: "follower", model: {provider: "litellm", name: "gpt-4o", temperature: 0.0}}
 
 action_space:
   enabled: ["message", "draw", "erase", "undo", "reset", "do_nothing"]

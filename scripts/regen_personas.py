@@ -122,7 +122,7 @@ def _resolve_api_config() -> tuple[str, str, str, str]:
         os.environ.get("AZURE_OPENAI_DEPLOYMENT")
         or os.environ.get("AZURE_OPENAI_MODEL")
         or os.environ.get("COLLABSIM_MODEL_NAME")
-        or "gpt-5.5"
+        or "gpt-4o"
     )
     api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
     return api_key, base, deployment, api_version
